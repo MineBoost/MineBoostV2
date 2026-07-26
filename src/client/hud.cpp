@@ -6,13 +6,20 @@
 
 #include "client/hud.h"
 #include <string>
+#include <utility>
 #include <iostream>
 #include <cmath>
+#include <cwchar>
+#include <cctype>
+#include <algorithm>
+#include "util/string.h"
 #include "settings.h"
 #include "util/numeric.h"
 #include "log.h"
 #include "client.h"
 #include "inventory.h"
+#include "itemdef.h"
+#include "itemgroup.h"
 #include "shader.h"
 #include "client/tile.h"
 #include "localplayer.h"
@@ -21,16 +28,57 @@
 #include "fontengine.h"
 #include "guiscalingfilter.h"
 #include "mesh.h"
+#include "gui/mainmenumanager.h"
 #include "wieldmesh.h"
 #include "client/renderingengine.h"
 #include "client/minimap.h"
 #include "client/texturesource.h"
 #include "gui/touchcontrols.h"
+#include "client/macrolist.h"
 #include "util/enriched_string.h"
 #include "irrlicht_changes/CGUITTFont.h"
+#include "IFileSystem.h"
+#include "IReadFile.h"
+#include "gui/custom_menu/ModernUI.h"
 
 #define OBJECT_CROSSHAIR_LINE_SIZE 8
 #define CROSSHAIR_LINE_SIZE 10
+
+// Reads one of the "hud_color_*" settings (see defaultsettings.cpp) and
+// returns it as an SColor with the given alpha. Used both as a panel
+// background color (MusicHUD/InventoryHUD/CraftHUD/TargetHUD) and as an
+// image tint multiplier (PhotoHUD) -- see callers below. Falls back to
+// white (no visible change to a multiplied image, or a neutral panel
+// color) if the setting is somehow missing/malformed.
+static video::SColor getHudColorSetting(const std::string &setting, u32 alpha)
+{
+	v3f c = g_settings->getV3F(setting).value_or(v3f(255, 255, 255));
+	u32 r = rangelim(myround(c.X), 0, 255);
+	u32 g = rangelim(myround(c.Y), 0, 255);
+	u32 b = rangelim(myround(c.Z), 0, 255);
+	return video::SColor(alpha, r, g, b);
+}
+
+// Draws a HUD panel whose fill AND border both come from the same
+// "hud_color_*" setting (border just at full alpha, fill translucent),
+// so a single color pick in the "Colors" panel (see
+// src/gui/custom_menu/Menu.cpp) recolors the whole box. Shadow is
+// intentionally left off: ModernUI::dropShadow()'s rounded arcs poke out
+// past small HUD boxes' corners as solid dark smears rather than a soft
+// blur (it reads fine on the big 600x400 settings panels it was designed
+// for, not on ~140x30 HUD boxes) -- see the "Colors panel" branch of the
+// MineBoost changelog for the report.
+static void drawHudColorPanel(video::IVideoDriver *driver,
+		const core::rect<s32> &box, const std::string &setting)
+{
+	// Only the outline/border is user-colorable (see the "Colors" panel in
+	// src/gui/custom_menu/Menu.cpp) -- the fill stays this fixed dark
+	// shade for every HUD panel, same as it always was before per-element
+	// colors existed.
+	ModernUI::panel(driver, box, ModernUI::Radius,
+		video::SColor(190, 22, 24, 30), getHudColorSetting(setting, 255),
+		/*shadow=*/false);
+}
 
 static void setting_changed_callback(const std::string &name, void *data)
 {
@@ -151,10 +199,13 @@ Hud::~Hud()
 
 	if (m_selection_mesh)
 		m_selection_mesh->drop();
+
+	if (m_music_thumbnail_texture)
+		driver->removeTexture(m_music_thumbnail_texture);
 }
 
 void Hud::drawItem(const ItemStack &item, const core::rect<s32>& rect,
-		bool selected)
+		bool selected, bool draw_slot_bg)
 {
 	if (selected) {
 		/* draw highlighting around selected item */
@@ -224,7 +275,7 @@ void Hud::drawItem(const ItemStack &item, const core::rect<s32>& rect,
 	}
 
 	video::SColor bgcolor2(128, 0, 0, 0);
-	if (!use_hotbar_image)
+	if (draw_slot_bg && !use_hotbar_image)
 		driver->draw2DRectangle(bgcolor2, rect, NULL);
 	drawItemStack(driver, g_fontengine->getFont(), item, rect, NULL,
 		client, selected ? IT_ROT_SELECTED : IT_ROT_NONE);
@@ -919,6 +970,1133 @@ void Hud::drawSelectionMesh()
 	}
 	driver->setTransform(video::ETS_WORLD, oldtransform);
 }
+
+namespace {
+	std::string formatMinSec(int total_seconds)
+	{
+		if (total_seconds < 0)
+			total_seconds = 0;
+		int m = total_seconds / 60;
+		int s = total_seconds % 60;
+		char buf[16];
+		porting::mt_snprintf(buf, sizeof(buf), "%d:%02d", m, s);
+		return buf;
+	}
+
+	// Draws a line of MusicHud text clipped to `rect`. If the text is
+	// wider than the rect, it scrolls left in a continuous, seamless loop
+	// instead of letting the HUD box grow to fit it -- this is what keeps
+	// the box a fixed size regardless of how long the track/artist name
+	// is.
+	void drawMarqueeLine(video::IVideoDriver *driver, gui::IGUIFont *font,
+			const std::wstring &wtext, const core::rect<s32> &rect,
+			video::SColor color)
+	{
+		if (wtext.empty())
+			return;
+
+		s32 text_w = font->getDimension(wtext.c_str()).Width;
+		s32 avail_w = rect.getWidth();
+
+		if (text_w <= avail_w) {
+			font->draw(wtext.c_str(), rect, color, false, true, &rect);
+			return;
+		}
+
+		// Two copies of the text, `cycle` pixels apart, both scrolling
+		// left together: as soon as the first copy has fully scrolled off
+		// the left edge, the second is already lined up to take its
+		// place, so the loop has no visible seam or pause. Integer math
+		// (not a float timer) avoids any long-session precision drift.
+		constexpr s32 gap_px = 40;
+		constexpr unsigned long long px_per_sec = 30;
+		s32 cycle = text_w + gap_px;
+		unsigned long long now_ms = porting::getTimeMs();
+		s32 offset = (s32)((now_ms * px_per_sec / 1000ULL) % (unsigned long long)cycle);
+
+		core::rect<s32> r1(rect.UpperLeftCorner.X - offset, rect.UpperLeftCorner.Y,
+			rect.UpperLeftCorner.X - offset + text_w, rect.LowerRightCorner.Y);
+		core::rect<s32> r2(r1.UpperLeftCorner.X + cycle, r1.UpperLeftCorner.Y,
+			r1.LowerRightCorner.X + cycle, r1.LowerRightCorner.Y);
+
+		font->draw(wtext.c_str(), r1, color, false, true, &rect);
+		font->draw(wtext.c_str(), r2, color, false, true, &rect);
+	}
+}
+
+void Hud::updateMusicThumbnail(const NowPlayingInfo &info)
+{
+	if (!info.has_thumbnail) {
+		if (m_music_thumbnail_texture) {
+			driver->removeTexture(m_music_thumbnail_texture);
+			m_music_thumbnail_texture = nullptr;
+		}
+		m_music_thumbnail_id = 0;
+		return;
+	}
+
+	if (m_music_thumbnail_texture && info.thumbnail_id == m_music_thumbnail_id)
+		return; // already showing this exact artwork
+
+	if (m_music_thumbnail_texture) {
+		driver->removeTexture(m_music_thumbnail_texture);
+		m_music_thumbnail_texture = nullptr;
+	}
+
+	auto *device = RenderingEngine::get_raw_device();
+	io::IFileSystem *fs = device->getFileSystem();
+	io::IReadFile *memfile = fs->createMemoryReadFile(
+		info.thumbnail_data.data(), (s32)info.thumbnail_data.size(), "[music_hud_thumb_tmp");
+	if (!memfile)
+		return;
+
+	video::IImage *img = driver->createImageFromFile(memfile);
+	memfile->drop();
+	if (!img)
+		return;
+
+	// Unique name per artwork so Irrlicht's texture cache never confuses
+	// this frame's art with a previous track's.
+	std::string texname = "music_hud_thumb_" + std::to_string(info.thumbnail_id);
+	m_music_thumbnail_texture = driver->addTexture(texname.c_str(), img);
+	img->drop();
+	m_music_thumbnail_id = info.thumbnail_id;
+}
+
+void Hud::drawMusicHud()
+{
+	if (!g_settings->getBool("music_hud"))
+		return;
+
+	const NowPlayingInfo &info = m_now_playing.poll();
+	if (!info.active || info.title.empty()) {
+		updateMusicThumbnail(NowPlayingInfo()); // drop any cached art
+		return;
+	}
+
+	updateMusicThumbnail(info);
+
+	// Global size multiplier for MineBoost's custom HUD elements, combined
+	// with this HUD's own independent multiplier -- see "hud_size" and
+	// "music_hud_size" in src/gui/custom_menu/Menu.cpp ("HUD Size" slider
+	// and scroll-to-resize in "Move HUD" edit mode, respectively).
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f)
+		* rangelim(g_settings->getFloat("music_hud_size"), 0.5f, 2.5f);
+	unsigned int scaled_font_size = (unsigned int)(g_fontengine->getDefaultFontSize() * hud_size);
+	gui::IGUIFont *font = g_fontengine->getFont(scaled_font_size);
+	if (!font)
+		return;
+
+	std::string line1 = info.source.empty() ? "" : ("[" + info.source + "]");
+	std::string line2 = info.title;
+	std::string line3 = info.artist;
+
+	std::wstring wline1 = utf8_to_wide(line1);
+	std::wstring wline2 = utf8_to_wide(line2);
+	std::wstring wline3 = utf8_to_wide(line3);
+
+	const s32 pad = (s32)(8 * hud_size);
+	const s32 line_h = font->getDimension(L"Ay").Height;
+	int num_text_lines = 1 + (wline1.empty() ? 0 : 1) + (wline3.empty() ? 0 : 1);
+
+	const bool show_art = m_music_thumbnail_texture != nullptr;
+	const s32 art_size = show_art ? std::max<s32>(num_text_lines * line_h, 32) : 0;
+	const s32 art_gap = show_art ? pad : 0;
+
+	const bool show_progress = info.has_progress && info.duration_seconds > 0;
+	const s32 bar_h = 4;
+	const s32 progress_block_h = show_progress ? (pad / 2 + bar_h + 2 + line_h) : 0;
+
+	const s32 content_h = std::max(art_size, num_text_lines * line_h);
+	// Text column has a fixed width (scaled to the current font size) so
+	// the box never grows to fit long track/artist names -- long text
+	// scrolls in place via drawMarqueeLine() instead. This keeps the HUD
+	// a consistent, predictable size no matter what's playing.
+	const s32 text_area_w = line_h * 9;
+	const s32 box_w = art_size + art_gap + text_area_w + pad * 2;
+	const s32 box_h = pad + content_h + progress_block_h + pad;
+
+	// Position is user-draggable via Shift+E edit mode in the MineBoost GUI
+	// (see src/gui/custom_menu/Menu.cpp, music_sprite). A saved X of -1
+	// means "never moved yet" -> default to the top-right corner.
+	s32 pos_x = g_settings->getS32("music_hud_x");
+	s32 pos_y = g_settings->getS32("music_hud_y");
+	if (pos_x < 0)
+		pos_x = (s32)m_screensize.X - box_w - 10;
+
+	core::rect<s32> box(
+		pos_x, pos_y,
+		pos_x + box_w, pos_y + box_h);
+
+	drawHudColorPanel(driver, box, "hud_color_music");
+
+	video::SColor source_color(255, 200, 200, 200);
+	if (info.source == "Spotify")
+		source_color = video::SColor(255, 30, 215, 96);
+	else if (info.source == "YouTube Music")
+		source_color = video::SColor(255, 255, 0, 0);
+	else if (info.source == "SoundCloud")
+		source_color = video::SColor(255, 255, 119, 0);
+	else if (info.source == "Yandex Music")
+		source_color = video::SColor(255, 255, 204, 0);
+
+	const video::SColor artist_color(255, 200, 200, 200);
+
+	s32 content_x = box.UpperLeftCorner.X + pad;
+
+	if (show_art) {
+		core::dimension2d<u32> tex_size = m_music_thumbnail_texture->getOriginalSize();
+		core::rect<s32> art_rect(content_x, box.UpperLeftCorner.Y + pad,
+			content_x + art_size, box.UpperLeftCorner.Y + pad + art_size);
+		core::rect<s32> src_rect(0, 0, (s32)tex_size.Width, (s32)tex_size.Height);
+		driver->draw2DImage(m_music_thumbnail_texture, art_rect, src_rect,
+			nullptr, nullptr, true);
+		content_x += art_size + art_gap;
+	}
+
+	s32 y = box.UpperLeftCorner.Y + pad;
+	s32 text_right = box.LowerRightCorner.X - pad;
+
+	if (!wline1.empty()) {
+		core::rect<s32> rect1(content_x, y, text_right, y + line_h);
+		drawMarqueeLine(driver, font, wline1, rect1, source_color);
+		y += line_h;
+	}
+
+	core::rect<s32> rect2(content_x, y, text_right, y + line_h);
+	drawMarqueeLine(driver, font, wline2, rect2, source_color);
+	y += line_h;
+
+	if (!wline3.empty()) {
+		core::rect<s32> rect3(content_x, y, text_right, y + line_h);
+		drawMarqueeLine(driver, font, wline3, rect3, artist_color);
+	}
+
+	if (show_progress) {
+		s32 bar_y = box.UpperLeftCorner.Y + pad + content_h + pad / 2;
+		s32 bar_x = box.UpperLeftCorner.X + pad;
+		s32 bar_w = box_w - pad * 2;
+
+		core::rect<s32> bar_bg(bar_x, bar_y, bar_x + bar_w, bar_y + bar_h);
+		ModernUI::roundedRectFilled(driver, bar_bg, bar_h / 2, video::SColor(200, 60, 60, 60));
+
+		f32 ratio = rangelim(
+			(f32)info.position_seconds / (f32)info.duration_seconds, 0.0f, 1.0f);
+		core::rect<s32> bar_fill(bar_x, bar_y, bar_x + (s32)(bar_w * ratio), bar_y + bar_h);
+		if (bar_fill.LowerRightCorner.X > bar_fill.UpperLeftCorner.X)
+			ModernUI::roundedRectFilled(driver, bar_fill, bar_h / 2, source_color);
+
+		s32 time_y = bar_y + bar_h + 2;
+		std::wstring wpos = utf8_to_wide(formatMinSec(info.position_seconds));
+		std::wstring wdur = utf8_to_wide(formatMinSec(info.duration_seconds));
+		s32 dur_w = font->getDimension(wdur.c_str()).Width;
+
+		core::rect<s32> pos_rect(bar_x, time_y, bar_x + bar_w / 2, time_y + line_h);
+		font->draw(wpos.c_str(), pos_rect, video::SColor(255, 190, 190, 190), false, true);
+
+		core::rect<s32> dur_rect(bar_x + bar_w - dur_w, time_y, bar_x + bar_w, time_y + line_h);
+		font->draw(wdur.c_str(), dur_rect, video::SColor(255, 190, 190, 190), false, true);
+	}
+}
+
+void Hud::drawPhotoHud()
+{
+	if (!g_settings->getBool("photo_hud"))
+		return;
+
+	// Only while some GUI (inventory/crafting/chest formspec, pause menu,
+	// the MineBoost settings menu, etc.) is actually open -- this draws
+	// before the GUI environment itself (see DrawHUD::run() in
+	// src/client/render/plain.cpp), so it naturally ends up *behind*
+	// whatever formspec is showing.
+	if (!isMenuActive())
+		return;
+
+	// One of 3 fixed, built-in images (textures/base/pack/face.png,
+	// cat_kuki.png, mellstroy.png) rather than a player-chosen file path --
+	// selected via "photo_hud_image" (see the Photo HUD picker panel in
+	// src/gui/custom_menu/Menu.cpp), and loaded through the texture
+	// source, like every other UI texture, so a texture pack can still
+	// override it. Cheap to call every frame; the texture source does
+	// its own caching.
+	std::string image = g_settings->get("photo_hud_image");
+	std::string texname = (image == "cat_kuki") ? "cat_kuki.png" :
+		(image == "mellstroy") ? "mellstroy.png" : "face.png";
+	video::ITexture *tex = tsrc->getTexture(texname);
+	if (!tex)
+		return;
+
+	core::dimension2du imgsize = tex->getOriginalSize();
+	if (imgsize.Width == 0 || imgsize.Height == 0)
+		return;
+
+	// Global size multiplier for MineBoost's custom HUD elements -- see
+	// "hud_size" in src/gui/custom_menu/Menu.cpp ("HUD Size" slider).
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f);
+
+	// A small image next to/near the GUI, same draggable placement as
+	// the other custom HUD elements.
+	s32 max_dim = std::max<s32>(16, (s32)(g_settings->getS32("photo_hud_size") * hud_size));
+	float scale = std::min(
+		(float)max_dim / (float)imgsize.Width,
+		(float)max_dim / (float)imgsize.Height);
+	s32 draw_w = std::max<s32>(1, (s32)(imgsize.Width * scale));
+	s32 draw_h = std::max<s32>(1, (s32)(imgsize.Height * scale));
+
+	// Position is user-draggable via Shift+E edit mode in the MineBoost GUI
+	// (see src/gui/custom_menu/Menu.cpp, photo_sprite). A saved X of -1
+	// means "never moved yet" -> default to screen center.
+	s32 pos_x = g_settings->getS32("photo_hud_x");
+	s32 pos_y = g_settings->getS32("photo_hud_y");
+	if (pos_x < 0)
+		pos_x = ((s32)m_screensize.X - draw_w) / 2;
+	if (pos_y < 0)
+		pos_y = ((s32)m_screensize.Y - draw_h) / 2;
+
+	core::rect<s32> dest(pos_x, pos_y, pos_x + draw_w, pos_y + draw_h);
+
+	// Frame behind the photo -- only its outline is user-colorable via
+	// "hud_color_photo" (see the "Colors" panel in
+	// src/gui/custom_menu/Menu.cpp); drawHudColorPanel()'s fill is a fixed
+	// shade, and the photo itself is drawn at its original colors below
+	// (no tint) -- shadow off so it doesn't smear at the corners the way
+	// ModernUI::dropShadow() used to on a box this small (see the comment
+	// on drawHudColorPanel() near the top of this file). Padded a few px
+	// outward so the frame is actually visible around an opaque photo.
+	core::rect<s32> frame(dest.UpperLeftCorner.X - 6, dest.UpperLeftCorner.Y - 6,
+		dest.LowerRightCorner.X + 6, dest.LowerRightCorner.Y + 6);
+	drawHudColorPanel(driver, frame, "hud_color_photo");
+
+	core::rect<s32> src(0, 0, imgsize.Width, imgsize.Height);
+	driver->draw2DImage(tex, dest, src, nullptr, nullptr, true);
+}
+
+// Debug HUD backgrounds: draws the same fixed-size ModernUI panel behind
+// the coords/FPS/ping debug text (set up in GameUI::update(), see
+// src/client/gameui.cpp) that the "Move HUD" edit-mode preview shows for
+// them -- see coords_sprite/fov_sprite/ping_sprite in
+// src/gui/custom_menu/Menu.cpp for the matching preview boxes this mirrors
+// (same 140x30 baseline size * hud_size * <element>_size, same position
+// settings keys -- coords_sprite's box widens past that baseline to fit
+// the actual coordinate text, matching this function's draw_box() below).
+// Previously these three were bare IGUIStaticText labels with no backdrop
+// at all in real gameplay, so they didn't match the bordered preview boxes
+// shown while editing.
+//
+// Must run after GameUI::update() has positioned this frame's labels (it
+// reads the same settings) but before the GUI environment draws the static
+// text on top of it -- see DrawHUD::run() in src/client/render/plain.cpp.
+void Hud::drawDebugTextBackgrounds()
+{
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f);
+	const u32 text_h = g_fontengine->getTextHeight();
+
+	auto draw_box = [&](const char *show_key, const char *pos_key,
+			const char *size_key, s32 default_y_offset, const char *color_key,
+			const wchar_t *dynamic_text = nullptr) {
+		if (!g_settings->getBool(show_key))
+			return;
+
+		float size = hud_size * rangelim(g_settings->getFloat(size_key), 0.5f, 2.5f);
+		s32 w = (s32)(140 * size);
+		s32 h = (s32)(30 * size);
+
+		// Coordinates vary a lot in digit count -- a couple of short
+		// digits near spawn vs. a long negative number far out -- so
+		// instead of always using the fixed 140px width above, measure
+		// the actual text at this frame's font size (same font/size
+		// GameUI::update() applies to m_guitext_coords, since "size" here
+		// is computed the exact same way coords_size is there) and widen
+		// the box to fit it, with some padding. Never shrinks below the
+		// 140px baseline, so short coordinates still get a normal-looking
+		// box instead of one clipped tight to 3-4 digits.
+		if (dynamic_text) {
+			gui::IGUIFont *font = g_fontengine->getFont(
+				(unsigned int)(g_fontengine->getDefaultFontSize() * size), FM_Unspecified);
+			if (font) {
+				s32 text_w = (s32)font->getDimension(dynamic_text).Width;
+				w = std::max(w, text_w + (s32)(24 * size));
+			}
+		}
+
+		s32 x, y;
+		if (g_settings->exists(pos_key)) {
+			v2f data = g_settings->getV2F(pos_key);
+			x = (s32)data.X;
+			y = (s32)data.Y;
+		} else {
+			// Same fallback formula as GameUI::update() in gameui.cpp, so
+			// the backdrop lines up with the real text before it's ever
+			// been dragged.
+			x = 5;
+			y = (s32)m_screensize.Y - default_y_offset - (s32)text_h;
+		}
+
+		core::rect<s32> box(x, y, x + w, y + h);
+		drawHudColorPanel(driver, box, color_key);
+	};
+
+	std::ostringstream os(std::ios_base::binary);
+	os << std::setprecision(1) << std::fixed
+		<< "(" << "X: " << (player->getPosition().X / BS)
+		<< ", Y: " << (player->getPosition().Y / BS)
+		<< ", Z: " << (player->getPosition().Z / BS) << ")";
+	std::wstring coords_text = utf8_to_wide(os.str());
+
+	draw_box("show_coords", "coords_sprite", "coords_size", 5, "hud_color_coords", coords_text.c_str());
+	draw_box("show_fps", "fov_coords", "fps_size", 25, "hud_color_fps");
+	draw_box("show_ping", "ping_coords", "ping_size", 45, "hud_color_ping");
+}
+
+// Radial menu shown while the Macro Wheel key (default Tab) is held --
+// see Game::processMacroWheel() in src/client/game.cpp, which owns
+// macro_wheel_open/macro_wheel_selected and the actual key/scroll
+// handling; this function only reads them (plus MacroList) to render.
+// Irrlicht's 2D API has no filled-polygon primitive, so rather than true
+// pie wedges this draws the commands as a ring of boxes around the
+// center -- the same "arrange N choices in a circle" idea, just built
+// out of the same draw2DRectangle() calls every other MineBoost HUD
+// already uses.
+void Hud::drawMacroWheel()
+{
+	if (!macro_wheel_open)
+		return;
+
+	const auto &macros = MacroList::get().getAll();
+	if (macros.empty())
+		return;
+
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f);
+	unsigned int scaled_font_size = (unsigned int)(g_fontengine->getDefaultFontSize() * hud_size);
+	gui::IGUIFont *font = g_fontengine->getFont(scaled_font_size);
+	if (!font)
+		return;
+
+	s32 cx = (s32)m_screensize.X / 2;
+	s32 cy = (s32)m_screensize.Y / 2;
+
+	// Dim the world behind the wheel so the selection reads clearly.
+	driver->draw2DRectangle(video::SColor(90, 0, 0, 0),
+		core::rect<s32>(0, 0, (s32)m_screensize.X, (s32)m_screensize.Y));
+
+	s32 radius = (s32)(180 * hud_size);
+	s32 box_w = (s32)(170 * hud_size);
+	s32 box_h = (s32)(36 * hud_size);
+	int selected = ((macro_wheel_selected % (int)macros.size()) + (int)macros.size())
+		% (int)macros.size();
+
+	for (size_t i = 0; i < macros.size(); i++) {
+		float angle = (-90.0f + i * (360.0f / macros.size())) * M_PI / 180.0f;
+		s32 ix = cx + (s32)(radius * std::cos(angle));
+		s32 iy = cy + (s32)(radius * std::sin(angle));
+
+		core::rect<s32> box(ix - box_w / 2, iy - box_h / 2, ix + box_w / 2, iy + box_h / 2);
+		bool is_selected = ((int)i == selected);
+
+		ModernUI::panel(driver, box, ModernUI::RadiusSmall,
+			is_selected ? video::SColor(220, 30, 40, 55) : video::SColor(190, 24, 26, 34),
+			is_selected ? ModernUI::PanelBorder : ModernUI::PanelBorderDim,
+			/*shadow=*/false);
+
+		if (is_selected)
+			driver->draw2DLine(core::position2d<s32>(cx, cy),
+				core::position2d<s32>(ix, iy), video::SColor(140, 120, 255, 120));
+
+		std::wstring label = utf8_to_wide(macros[i]);
+		// Truncate long commands so they don't spill out of the box --
+		// full text is still visible via ".macro list" in chat.
+		const size_t max_chars = 22;
+		if (label.size() > max_chars)
+			label = label.substr(0, max_chars - 1) + L"\u2026";
+
+		font->draw(label.c_str(), box, video::SColor(255, 255, 255, 255), true, true);
+	}
+
+	// Small center dot so the ring has a clear focal point.
+	s32 dot = (s32)(4 * hud_size);
+	driver->draw2DRectangle(video::SColor(220, 255, 255, 255),
+		core::rect<s32>(cx - dot, cy - dot, cx + dot, cy + dot));
+}
+
+void Hud::drawTargetHud()
+{
+	if (!target_hud_active || !g_settings->getBool("target_hud"))
+		return;
+
+	// Global size multiplier for MineBoost's custom HUD elements, combined
+	// with this HUD's own independent multiplier -- see "hud_size" and
+	// "target_hud_size" in src/gui/custom_menu/Menu.cpp ("HUD Size" slider
+	// and scroll-to-resize in "Move HUD" edit mode, respectively).
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f)
+		* rangelim(g_settings->getFloat("target_hud_size"), 0.5f, 2.5f);
+	unsigned int scaled_font_size = (unsigned int)(g_fontengine->getDefaultFontSize() * hud_size);
+	gui::IGUIFont *font = g_fontengine->getFont(scaled_font_size);
+	if (!font)
+		return;
+
+	const s32 bar_w = (s32)(160 * hud_size);
+	const s32 bar_h = (s32)(10 * hud_size);
+	const s32 pad = (s32)(6 * hud_size);
+	const s32 line_h = font->getDimension(L"Ay").Height;
+
+	// Small avatar crop of the target's skin, shown to the left of the
+	// name/HP column. Player skins use the same head-front UV layout as
+	// Minecraft skins: an 8x8 square at (8,8) in a 64-px-wide texture
+	// (scaled up proportionally for higher-resolution skins), plus a
+	// second "hat/hair" overlay layer at (40,8), which we composite on
+	// top so hats, hair and facial accessories actually show up.
+	video::ITexture *avatar_texture = nullptr;
+	core::rect<s32> avatar_src;
+	core::rect<s32> avatar_overlay_src;
+	bool avatar_has_overlay = false;
+	s32 avatar_size = line_h + bar_h + pad; // roughly square, matches box content height
+	if (!target_hud_skin.empty()) {
+		avatar_texture = tsrc->getTexture(target_hud_skin);
+		if (avatar_texture) {
+			core::dimension2du sz = avatar_texture->getOriginalSize();
+			f32 scale = sz.Width > 0 ? sz.Width / 64.0f : 1.0f;
+			s32 fx = (s32)(8 * scale);
+			s32 fy = (s32)(8 * scale);
+			s32 fw = std::max<s32>(1, (s32)(8 * scale));
+			s32 fh = std::max<s32>(1, (s32)(8 * scale));
+			avatar_src = core::rect<s32>(fx, fy, fx + fw, fy + fh);
+
+			// The hat/hair layer sits to the right of the base head on
+			// the same row. Only use it if the texture is tall enough
+			// to actually contain that row (old 32-px-tall legacy skins
+			// without a second layer would otherwise sample garbage).
+			s32 ox = (s32)(40 * scale);
+			s32 oy = fy;
+			if (ox + fw <= (s32)sz.Width && oy + fh <= (s32)sz.Height) {
+				avatar_overlay_src = core::rect<s32>(ox, oy, ox + fw, oy + fh);
+				avatar_has_overlay = true;
+			}
+		}
+	}
+	s32 avatar_col_w = avatar_texture ? avatar_size + pad : 0;
+
+	std::wstring wname = utf8_to_wide(target_hud_name);
+	s32 name_w = font->getDimension(wname.c_str()).Width;
+	s32 text_col_w = std::max<s32>(bar_w, name_w);
+	s32 box_w = avatar_col_w + text_col_w + pad * 2;
+	s32 box_h = line_h + bar_h + pad * 3;
+
+	s32 x = m_displaycenter.X - box_w / 2;
+	s32 y = (s32)(m_screensize.Y * 0.16f); // default: a bit below the top, above the crosshair
+
+	// Position is user-draggable via the "Move HUD" corner button in the
+	// MineBoost GUI (see src/gui/custom_menu/Menu.cpp, target_hud_sprite).
+	s32 saved_x = g_settings->getS32("target_hud_x");
+	s32 saved_y = g_settings->getS32("target_hud_y");
+	if (saved_x >= 0)
+		x = saved_x;
+	if (saved_y >= 0)
+		y = saved_y;
+
+	core::rect<s32> box(x, y, x + box_w, y + box_h);
+	drawHudColorPanel(driver, box, "hud_color_target");
+
+	if (avatar_texture) {
+		core::rect<s32> avatar_dst(
+			box.UpperLeftCorner.X + pad, box.UpperLeftCorner.Y + pad,
+			box.UpperLeftCorner.X + pad + avatar_size, box.UpperLeftCorner.Y + pad + avatar_size);
+		draw2DImageFilterScaled(driver, avatar_texture, avatar_dst, avatar_src);
+		if (avatar_has_overlay) {
+			draw2DImageFilterScaled(driver, avatar_texture, avatar_dst,
+				avatar_overlay_src, nullptr, nullptr, true);
+		}
+	}
+
+	s32 text_x = box.UpperLeftCorner.X + pad + avatar_col_w;
+	core::rect<s32> name_rect(text_x, box.UpperLeftCorner.Y + pad,
+		box.LowerRightCorner.X - pad, box.UpperLeftCorner.Y + pad + line_h);
+	font->draw(wname.c_str(), name_rect, video::SColor(255, 255, 255, 255), true, true);
+
+	s32 bar_x = text_x + (text_col_w - bar_w) / 2;
+	s32 bar_y = box.UpperLeftCorner.Y + pad + line_h + pad;
+	core::rect<s32> bar_bg(bar_x, bar_y, bar_x + bar_w, bar_y + bar_h);
+	ModernUI::roundedRectFilled(driver, bar_bg, bar_h / 2, video::SColor(200, 40, 40, 40));
+
+	f32 ratio = target_hud_hp_max > 0 ? (f32)target_hud_hp / (f32)target_hud_hp_max : 0.0f;
+	ratio = rangelim(ratio, 0.0f, 1.0f);
+	video::SColor hp_color = ratio > 0.5f ? video::SColor(255, 60, 200, 60) :
+		ratio > 0.25f ? video::SColor(255, 230, 200, 40) : video::SColor(255, 220, 50, 50);
+	core::rect<s32> bar_fill(bar_x, bar_y, bar_x + (s32)(bar_w * ratio), bar_y + bar_h);
+	if (bar_fill.LowerRightCorner.X > bar_fill.UpperLeftCorner.X)
+		ModernUI::roundedRectFilled(driver, bar_fill, bar_h / 2, hp_color);
+}
+
+void Hud::drawInventoryHud()
+{
+	if (!g_settings->getBool("inventory_hud"))
+		return;
+
+	InventoryList *mainlist = inventory->getList("main");
+	if (!mainlist || mainlist->getSize() == 0) {
+		// Log this once rather than every frame: with inventory_hud
+		// enabled but nothing to draw, it's otherwise indistinguishable
+		// from the feature being broken.
+		static bool warned = false;
+		if (!warned) {
+			warned = true;
+			warningstream << "InventoryHud: inventory_hud is enabled but the "
+				"server isn't sending a \"main\" inventory list (or it's "
+				"empty). Nothing to draw." << std::endl;
+
+			const std::vector<InventoryList *> &lists = inventory->getLists();
+			if (lists.empty()) {
+				warningstream << "InventoryHud: this player has no inventory "
+					"lists at all yet (maybe too early in the connection)." << std::endl;
+			} else {
+				warningstream << "InventoryHud: available inventory lists from this server: ";
+				for (size_t i = 0; i < lists.size(); i++) {
+					if (i > 0)
+						warningstream << ", ";
+					warningstream << "\"" << lists[i]->getName() << "\" (size "
+						<< lists[i]->getSize() << ")";
+				}
+				warningstream << std::endl;
+			}
+		}
+		return;
+	}
+
+	gui::IGUIFont *font = g_fontengine->getFont();
+	if (!font) {
+		static bool warned = false;
+		if (!warned) {
+			warned = true;
+			warningstream << "InventoryHud: inventory_hud is enabled and the "
+				"\"main\" list has items, but g_fontengine->getFont() "
+				"returned null -- can't draw without a font." << std::endl;
+		}
+		return;
+	}
+
+	// Reuse the hotbar's slot size/spacing so the grid matches the rest
+	// of the HUD visually, regardless of hud_scaling -- then apply this
+	// HUD's own independent size multiplier on top (see "inventory_hud_size"
+	// in src/gui/custom_menu/Menu.cpp, adjustable by scrolling over this
+	// HUD while in "Move HUD" edit mode).
+	float inventory_hud_size = rangelim(g_settings->getFloat("inventory_hud_size"), 0.5f, 2.5f);
+	const s32 slot = (s32)(m_hotbar_imagesize * inventory_hud_size);
+	const s32 slot_pad = (s32)(m_padding * inventory_hud_size);
+	const s32 pad = (s32)(8 * inventory_hud_size);
+	gui::IGUIFont *scaled_font = g_fontengine->getFont(
+		(unsigned int)(g_fontengine->getDefaultFontSize() * inventory_hud_size));
+	if (scaled_font)
+		font = scaled_font;
+	const s32 title_h = font->getDimension(L"Ay").Height + pad;
+	const s32 cell = slot + slot_pad * 2;
+
+	// One section per inventory list being displayed: always "main"
+	// ("Inventory"), plus whichever extra lists inventory_hud_extra_lists
+	// names and this server actually sends non-empty (e.g. "armor" if you
+	// want equipped armor folded in here instead of a separate HUD box).
+	// "craft"/"craftpreview" are intentionally never shown here even if
+	// listed -- the crafting grid has its own dedicated box, see
+	// Hud::drawCraftHud() below.
+	//
+	// Titles are pre-converted to wide strings here (rather than every
+	// frame in the render loop below) and the extra-list setting is only
+	// re-parsed when its raw value actually changes -- this setting is
+	// effectively static at runtime, so redoing str_split()/trim()/
+	// utf8_to_wide() on it hundreds of times a second was pure waste,
+	// especially noticeable on weak/low-end hardware.
+	struct Section {
+		std::wstring wtitle;
+		InventoryList *list;
+		s32 cols, rows;
+	};
+	std::vector<Section> sections;
+
+	auto addSection = [&](const std::wstring &wtitle, InventoryList *list) {
+		if (!list || list->getSize() == 0)
+			return;
+		s32 count = (s32)list->getSize();
+		s32 cols = std::min<s32>(8, count);
+		s32 rows = (count + cols - 1) / cols;
+		sections.push_back({wtitle, list, cols, rows});
+	};
+
+	static const std::wstring inventory_wtitle = utf8_to_wide("Inventory");
+	addSection(inventory_wtitle, mainlist);
+
+	static std::string cached_extra_lists_raw;
+	static std::vector<std::pair<std::string, std::wstring>> cached_extra_lists;
+	std::string extra_lists_raw = g_settings->get("inventory_hud_extra_lists");
+	if (extra_lists_raw != cached_extra_lists_raw) {
+		cached_extra_lists_raw = extra_lists_raw;
+		cached_extra_lists.clear();
+		for (const std::string &raw_name : str_split(extra_lists_raw, ',')) {
+			std::string name(trim(raw_name));
+			if (name.empty() || name == "main" || name == "craft" || name == "craftpreview")
+				continue; // "main" is already the first section above; craft
+				          // lists belong to CraftHud instead
+			std::string title = name;
+			title[0] = std::toupper((unsigned char)title[0]);
+			cached_extra_lists.emplace_back(name, utf8_to_wide(title));
+		}
+	}
+	for (const auto &entry : cached_extra_lists)
+		addSection(entry.second, inventory->getList(entry.first));
+
+	if (sections.empty())
+		return;
+
+	// Box width follows whichever section is widest (in columns); every
+	// section is left-aligned within that width rather than individually
+	// centered, so the sections visually line up as one coherent panel.
+	s32 max_cols = 0;
+	s32 box_h = pad * 2;
+	for (const Section &sec : sections) {
+		max_cols = std::max(max_cols, sec.cols);
+		box_h += title_h + sec.rows * cell;
+	}
+	const s32 box_w = max_cols * cell + pad * 2;
+
+	s32 x = m_displaycenter.X - box_w / 2;
+	s32 y = m_displaycenter.Y - box_h / 2;
+
+	// Position is user-draggable via the "Move HUD" corner button in the
+	// MineBoost GUI (see src/gui/custom_menu/Menu.cpp, inventory_hud_sprite).
+	s32 saved_x = g_settings->getS32("inventory_hud_x");
+	s32 saved_y = g_settings->getS32("inventory_hud_y");
+	if (saved_x >= 0)
+		x = saved_x;
+	if (saved_y >= 0)
+		y = saved_y;
+
+	core::rect<s32> box(x, y, x + box_w, y + box_h);
+	drawHudColorPanel(driver, box, "hud_color_inventory");
+
+	s32 section_y = box.UpperLeftCorner.Y;
+	for (const Section &sec : sections) {
+		core::rect<s32> title_rect(box.UpperLeftCorner.X + pad, section_y + pad / 2,
+			box.LowerRightCorner.X - pad, section_y + title_h);
+		font->draw(sec.wtitle.c_str(), title_rect, video::SColor(255, 255, 255, 255), false, true);
+
+		s32 count = (s32)sec.list->getSize();
+		for (s32 i = 0; i < count; i++) {
+			s32 col = i % sec.cols;
+			s32 row = i / sec.cols;
+			core::rect<s32> item_rect(0, 0, slot, slot);
+			item_rect += core::vector2d<s32>(
+				box.UpperLeftCorner.X + pad + slot_pad + col * cell,
+				section_y + title_h + pad + slot_pad + row * cell);
+			// Draw a distinct slot background + outline for every cell
+			// (even empty ones) so the grid actually reads as a set of
+			// slots instead of one undivided panel; drawItem() is told
+			// not to draw its own flat background on top of this.
+			ModernUI::panel(driver, item_rect, ModernUI::RadiusSmall, video::SColor(130, 40, 42, 52), video::SColor(150, 120, 150, 220), /*shadow=*/false);
+			drawItem(sec.list->getItem(i), item_rect, false, false);
+		}
+
+		section_y += title_h + sec.rows * cell;
+	}
+}
+
+void Hud::drawCraftHud()
+{
+	if (!g_settings->getBool("craft_hud"))
+		return;
+
+	InventoryList *craftlist = inventory->getList("craft");
+	InventoryList *resultlist = inventory->getList("craftpreview");
+
+	auto listHasAnyItem = [](InventoryList *list) {
+		if (!list)
+			return false;
+		for (u32 i = 0; i < list->getSize(); i++) {
+			if (!list->getItem(i).empty())
+				return true;
+		}
+		return false;
+	};
+
+	// Only show the box while there's actually something in the craft
+	// grid or a result to show -- this is meant to answer "what's in my
+	// craft right now", not sit on screen as an empty panel at all times.
+	if (!listHasAnyItem(craftlist) && !listHasAnyItem(resultlist))
+		return;
+
+	gui::IGUIFont *font = g_fontengine->getFont();
+	if (!font)
+		return;
+
+	// See "craft_hud_size" in src/gui/custom_menu/Menu.cpp -- scroll over
+	// this HUD in "Move HUD" edit mode to resize it independently of the
+	// native hotbar/inventory scaling.
+	float craft_hud_size = rangelim(g_settings->getFloat("craft_hud_size"), 0.5f, 2.5f);
+	const s32 slot = (s32)(m_hotbar_imagesize * craft_hud_size);
+	const s32 slot_pad = (s32)(m_padding * craft_hud_size);
+	const s32 pad = (s32)(8 * craft_hud_size);
+	gui::IGUIFont *scaled_font = g_fontengine->getFont(
+		(unsigned int)(g_fontengine->getDefaultFontSize() * craft_hud_size));
+	if (scaled_font)
+		font = scaled_font;
+	const s32 title_h = font->getDimension(L"Ay").Height + pad;
+	const s32 cell = slot + slot_pad * 2;
+
+	struct Section {
+		std::wstring wtitle;
+		InventoryList *list;
+		s32 cols, rows;
+	};
+	std::vector<Section> sections;
+
+	auto addSection = [&](const std::wstring &wtitle, InventoryList *list) {
+		if (!list || list->getSize() == 0)
+			return;
+		s32 count = (s32)list->getSize();
+		s32 cols = std::min<s32>(8, count);
+		s32 rows = (count + cols - 1) / cols;
+		sections.push_back({wtitle, list, cols, rows});
+	};
+
+	static const std::wstring craft_wtitle = utf8_to_wide("Craft");
+	static const std::wstring result_wtitle = utf8_to_wide("Result");
+	addSection(craft_wtitle, craftlist);
+	addSection(result_wtitle, resultlist);
+
+	if (sections.empty())
+		return;
+
+	s32 max_cols = 0;
+	s32 box_h = pad * 2;
+	for (const Section &sec : sections) {
+		max_cols = std::max(max_cols, sec.cols);
+		box_h += title_h + sec.rows * cell;
+	}
+	const s32 box_w = max_cols * cell + pad * 2;
+
+	// Default position: to the right of screen center, so it doesn't
+	// overlap InventoryHud's default (centered) position out of the box.
+	s32 x = m_displaycenter.X + cell;
+	s32 y = m_displaycenter.Y - box_h / 2;
+
+	// Position is user-draggable via the "Move HUD" corner button in the
+	// MineBoost GUI (see src/gui/custom_menu/Menu.cpp, craft_hud_sprite).
+	s32 saved_x = g_settings->getS32("craft_hud_x");
+	s32 saved_y = g_settings->getS32("craft_hud_y");
+	if (saved_x >= 0)
+		x = saved_x;
+	if (saved_y >= 0)
+		y = saved_y;
+
+	core::rect<s32> box(x, y, x + box_w, y + box_h);
+	drawHudColorPanel(driver, box, "hud_color_craft");
+
+	s32 section_y = box.UpperLeftCorner.Y;
+	for (const Section &sec : sections) {
+		core::rect<s32> title_rect(box.UpperLeftCorner.X + pad, section_y + pad / 2,
+			box.LowerRightCorner.X - pad, section_y + title_h);
+		font->draw(sec.wtitle.c_str(), title_rect, video::SColor(255, 255, 255, 255), false, true);
+
+		s32 count = (s32)sec.list->getSize();
+		for (s32 i = 0; i < count; i++) {
+			s32 col = i % sec.cols;
+			s32 row = i / sec.cols;
+			core::rect<s32> item_rect(0, 0, slot, slot);
+			item_rect += core::vector2d<s32>(
+				box.UpperLeftCorner.X + pad + slot_pad + col * cell,
+				section_y + title_h + pad + slot_pad + row * cell);
+			ModernUI::panel(driver, item_rect, ModernUI::RadiusSmall, video::SColor(130, 40, 42, 52), video::SColor(150, 120, 150, 220), /*shadow=*/false);
+			drawItem(sec.list->getItem(i), item_rect, false, false);
+		}
+
+		section_y += title_h + sec.rows * cell;
+	}
+}
+
+// ArmorHUD temporarily disabled -- entire implementation commented out
+// below. Re-enable by removing the #if 0 / #endif wrapper (and the
+// matching commented-out call in render/plain.cpp, declaration in
+// hud.h, defaultsettings.cpp entries, and Menu.cpp/Menu.h GUI wiring).
+#if 0
+void Hud::drawArmorHud()
+{
+	if (!g_settings->getBool("armor_hud"))
+		return;
+
+	gui::IGUIFont *font = g_fontengine->getFont();
+	if (!font)
+		return;
+
+	auto *idef = client->idef();
+
+	// Which inventory list to treat as "equipped armor". "armor" is the
+	// convention used by 3d_armor and Mineclonia/MineClone2's mcl_armor;
+	// a few other names some forks/derivatives use are included too.
+	// Add more via the comma-separated "armor_hud_lists" setting without
+	// needing a rebuild.
+	std::vector<std::string> armor_list_names;
+	{
+		std::string extra = g_settings->get("armor_hud_lists");
+		for (std::string &name : str_split(extra, ',')) {
+			name = trim(name);
+			if (!name.empty())
+				armor_list_names.push_back(name);
+		}
+	}
+	armor_list_names.push_back("armor");
+	armor_list_names.push_back("armor_inventory");
+	armor_list_names.push_back("3d_armor_inventory");
+	armor_list_names.push_back("gemarmor");
+	armor_list_names.push_back("gemarmor_inventory");
+	armor_list_names.push_back("gem_armor");
+	armor_list_names.push_back("gem_armor_inventory");
+
+	InventoryList *armorlist = nullptr;
+	std::string used_list_name;
+	for (const std::string &name : armor_list_names) {
+		InventoryList *list = inventory->getList(name);
+		if (list) {
+			armorlist = list;
+			used_list_name = name;
+			break;
+		}
+	}
+
+	// Rows to draw: icon + label + durability, one per piece. Mirrors the
+	// layout used by Mineclonia-oriented clients (e.g. Lunarchy's
+	// EquipmentHUD): a fixed Helmet/Chestplate/Leggings/Boots order, with
+	// unequipped slots simply omitted rather than shown empty.
+	struct ArmorRow {
+		const ItemStack *item;
+		std::wstring label;
+	};
+	std::vector<ArmorRow> rows;
+
+	static const wchar_t *canonical_labels[4] = {
+		L"Helmet", L"Chestplate", L"Leggings", L"Boots"
+	};
+
+	if (armorlist) {
+		u32 size = armorlist->getSize();
+		// Some armor mods (Mineclonia's mcl_armor among them) reserve
+		// slot 0 for a "quick equip" item and start real armor at slot
+		// 1, giving a list of size 5 for 4 pieces. If the list is
+		// exactly that shape, skip slot 0; otherwise assume pieces
+		// start at slot 0.
+		u32 start = (size == 5) ? 1 : 0;
+		for (u32 i = 0; i < 4 && start + i < size; i++) {
+			const ItemStack &item = armorlist->getItem(start + i);
+			if (!item.empty())
+				rows.push_back({ &armorlist->getItem(start + i), canonical_labels[i] });
+		}
+	} else {
+		// Fallback: this server has no dedicated equip-list under any
+		// name we know (checked above). Some homegrown armor mods don't
+		// use one at all -- armor just lives in "main" like any other
+		// item, with no separate server-side signal for "worn" vs
+		// "carried". Since there's nothing more reliable to go on,
+		// match by name/description against a configurable keyword list
+		// instead ("armor_hud_keywords", comma-separated). NOTE: without
+		// a real equip-list, this can't distinguish armor sitting unused
+		// in your inventory from armor actually worn.
+		//
+		// Important: only the FIRST item matching each keyword is kept
+		// (e.g. one "helmet" row, not one per spare helmet you happen to
+		// be carrying) -- otherwise every duplicate/spare piece in your
+		// inventory would get its own row, which is unreadable clutter
+		// rather than a useful HUD.
+		std::vector<std::string> keywords;
+		for (std::string &kw : str_split(g_settings->get("armor_hud_keywords"), ',')) {
+			kw = lowercase(trim(kw));
+			if (!kw.empty())
+				keywords.push_back(kw);
+		}
+
+		if (!keywords.empty()) {
+			InventoryList *mainlist = inventory->getList("main");
+			if (mainlist) {
+				std::vector<const ItemStack *> best_per_keyword(keywords.size(), nullptr);
+
+				for (u32 j = 0; j < mainlist->getSize(); j++) {
+					const ItemStack &item = mainlist->getItem(j);
+					if (item.empty())
+						continue;
+
+					std::string haystack = lowercase(item.name);
+					haystack += ' ';
+					haystack += lowercase(item.getDefinition(idef).description);
+
+					for (size_t k = 0; k < keywords.size(); k++) {
+						if (!best_per_keyword[k] &&
+								haystack.find(keywords[k]) != std::string::npos) {
+							best_per_keyword[k] = &mainlist->getItem(j);
+							break;
+						}
+					}
+				}
+
+				for (size_t k = 0; k < keywords.size(); k++) {
+					if (!best_per_keyword[k])
+						continue;
+					const ItemStack &item = *best_per_keyword[k];
+					std::wstring label = utf8_to_wide(item.getDefinition(idef).description);
+					if (label.empty())
+						label = utf8_to_wide(item.name);
+					rows.push_back({ best_per_keyword[k], label });
+				}
+			}
+		}
+	}
+
+	// Optional held-item row, drawn above the armor pieces (same idea as
+	// Lunarchy's EquipmentHUD, which always includes the wielded item).
+	ItemStack wielded, hand;
+	if (g_settings->getBool("armor_hud_show_held") && player) {
+		ItemStack &effective = player->getWieldedItem(&wielded, &hand);
+		if (!effective.empty()) {
+			// wielded/hand are locals, but getWieldedItem returns a
+			// reference into one of them (or the player's inventory) --
+			// copy it somewhere stable for the rest of this call.
+			wielded = effective;
+			rows.insert(rows.begin(), { &wielded, std::wstring(L"Held item") });
+		}
+	}
+
+	if (rows.empty()) {
+		// Log this once rather than every frame: with armor_hud enabled
+		// but nothing to draw, it's otherwise indistinguishable from the
+		// feature being broken.
+		static bool warned = false;
+		if (!warned) {
+			warned = true;
+			if (used_list_name.empty()) {
+				warningstream << "ArmorHud: armor_hud is enabled, but none of "
+					"the known equipped-armor inventory lists were found, and "
+					"no items in \"main\" matched armor_hud_keywords." << std::endl;
+			} else {
+				warningstream << "ArmorHud: armor_hud is enabled, found list \""
+					<< used_list_name << "\" but it's empty (no armor equipped)." << std::endl;
+			}
+
+			const std::vector<InventoryList *> &lists = inventory->getLists();
+			if (lists.empty()) {
+				warningstream << "ArmorHud: this player has no inventory lists "
+					"at all yet (maybe too early in the connection)." << std::endl;
+			} else {
+				warningstream << "ArmorHud: available inventory lists from this server: ";
+				for (size_t i = 0; i < lists.size(); i++) {
+					if (i > 0)
+						warningstream << ", ";
+					warningstream << "\"" << lists[i]->getName() << "\" (size "
+						<< lists[i]->getSize() << ")";
+				}
+				warningstream << std::endl;
+			}
+
+			InventoryList *mainlist = inventory->getList("main");
+			if (mainlist) {
+				warningstream << "ArmorHud: items currently in \"main\": ";
+				bool first = true;
+				for (u32 j = 0; j < mainlist->getSize(); j++) {
+					const ItemStack &item = mainlist->getItem(j);
+					if (item.empty())
+						continue;
+					if (!first)
+						warningstream << ", ";
+					first = false;
+					warningstream << "\"" << item.name << "\" (\""
+						<< item.getDefinition(idef).description << "\")";
+				}
+				if (first)
+					warningstream << "(none)";
+				warningstream << std::endl;
+			}
+		}
+		return;
+	}
+
+	// --- Layout: a vertical list, icon on the left, name + durability
+	// text to the right -- same arrangement as Lunarchy's EquipmentHUD.
+	const s32 pad = 8;
+	const s32 line_h = g_fontengine->getTextHeight();
+	const s32 icon_size = std::max<s32>(16, std::min<s32>(line_h + 10, 28));
+	const s32 row_gap = 3;
+	const s32 row_h = std::max<s32>(icon_size, line_h);
+	const s32 icon_text_gap = 6;
+
+	s32 max_row_text_w = 0;
+	std::vector<std::wstring> row_texts(rows.size());
+	std::vector<video::SColor> row_bar_colors(rows.size());
+	for (size_t i = 0; i < rows.size(); i++) {
+		const ItemStack &item = *rows[i].item;
+
+		std::wstring name = rows[i].label;
+		if (!item.empty()) {
+			std::string desc = item.getDefinition(idef).description;
+			if (!desc.empty())
+				name = utf8_to_wide(desc);
+		}
+
+		std::wstring durability_text;
+		video::SColor bar_color(255, 60, 200, 60);
+		if (!item.empty() && item.wear != 0) {
+			f32 ratio = 1.0f - (f32)item.wear / 65535.0f;
+			int pct = (int)std::round(ratio * 100.0f);
+			wchar_t buf[16];
+			swprintf(buf, sizeof(buf) / sizeof(wchar_t), L" (%d%%)", pct);
+			durability_text = buf;
+
+			if (ratio > 0.5f)
+				bar_color = video::SColor(255, 60, 200, 60);
+			else if (ratio > 0.25f)
+				bar_color = video::SColor(255, 230, 160, 40);
+			else
+				bar_color = video::SColor(255, 220, 50, 50);
+		}
+
+		row_texts[i] = name + durability_text;
+		row_bar_colors[i] = bar_color;
+
+		core::dimension2d<u32> text_size = font->getDimension(row_texts[i].c_str());
+		max_row_text_w = std::max<s32>(max_row_text_w, (s32)text_size.Width);
+	}
+
+	const s32 content_w = icon_size + icon_text_gap + max_row_text_w;
+	const s32 content_h = (s32)rows.size() * row_h +
+		std::max<s32>(0, (s32)rows.size() - 1) * row_gap;
+	const s32 box_w = content_w + pad * 2;
+	const s32 box_h = content_h + pad * 2;
+
+	// Position is user-draggable via the "Move HUD" corner button in the
+	// MineBoost GUI (see src/gui/custom_menu/Menu.cpp, armor_hud_sprite).
+	s32 x = g_settings->getS32("armor_hud_x");
+	s32 y = g_settings->getS32("armor_hud_y");
+	if (x < 0)
+		x = m_displaycenter.X - box_w / 2;
+	if (y < 0)
+		y = (s32)(m_screensize.Y * 0.6f);
+
+	core::rect<s32> box(x, y, x + box_w, y + box_h);
+	ModernUI::panel(driver, box, ModernUI::Radius, video::SColor(190, 22, 24, 30), ModernUI::PanelBorderDim, /*shadow=*/false);
+
+	for (size_t i = 0; i < rows.size(); i++) {
+		const ItemStack &item = *rows[i].item;
+		s32 top = box.UpperLeftCorner.Y + pad + (s32)i * (row_h + row_gap);
+
+		core::rect<s32> icon_rect(
+			box.UpperLeftCorner.X + pad,
+			top + (row_h - icon_size) / 2,
+			box.UpperLeftCorner.X + pad + icon_size,
+			top + (row_h - icon_size) / 2 + icon_size);
+		if (!item.empty())
+			drawItem(item, icon_rect, false);
+
+		s32 text_x = icon_rect.LowerRightCorner.X + icon_text_gap;
+		core::dimension2d<u32> text_size = font->getDimension(row_texts[i].c_str());
+		s32 text_y = top + (row_h - (s32)text_size.Height) / 2;
+		core::rect<s32> text_rect(text_x, text_y,
+			text_x + (s32)text_size.Width, text_y + (s32)text_size.Height);
+		font->draw(row_texts[i].c_str(), text_rect, video::SColor(255, 255, 255, 255), false, false);
+	}
+}
+#endif // ArmorHUD disabled
+
 
 enum Hud::BlockBoundsMode Hud::toggleBlockBounds()
 {

@@ -283,6 +283,9 @@ HTTPFetchOngoing::HTTPFetchOngoing(const HTTPFetchRequest &request_,
 			curl_mimepart *part = curl_mime_addpart(multipart_mime);
 			curl_mime_name(part, it.first.c_str());
 			curl_mime_data(part, it.second.c_str(), it.second.size());
+			auto filename_it = request.multipart_filenames.find(it.first);
+			if (filename_it != request.multipart_filenames.end())
+				curl_mime_filename(part, filename_it->second.c_str());
 		}
 		curl_easy_setopt(curl, CURLOPT_MIMEPOST, multipart_mime);
 	} else {

@@ -152,8 +152,6 @@ local function load()
 			"show_nametag_backgrounds",
 			{ heading = fgettext_ne("Chat") },
 			"console_height",
-			"console_alpha",
-			"console_color",
 			{ heading = fgettext_ne("Controls") },
 			"autojump",
 			"safe_dig_and_place",

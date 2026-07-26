@@ -337,6 +337,8 @@ const KeyPress EscapeKey("KEY_ESCAPE");
 const KeyPress LMBKey("KEY_LBUTTON");
 const KeyPress MMBKey("KEY_MBUTTON");
 const KeyPress RMBKey("KEY_RBUTTON");
+const KeyPress X1Key("KEY_XBUTTON1");
+const KeyPress X2Key("KEY_XBUTTON2");
 
 /*
 	Key config

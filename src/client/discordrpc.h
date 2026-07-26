@@ -16,14 +16,23 @@
 // it only uses jsoncpp (already part of this project) plus plain OS
 // sockets/pipes.
 //
-// IMPORTANT: large_image/small_image below are *asset key names*, not
-// file paths. To use your own pictures you first have to:
+// IMPORTANT: large_image/small_image below are normally *asset key names*,
+// not file paths. To use your own pictures as a key name you first have to:
 //   1. Create an application at https://discord.com/developers/applications
 //   2. Copy its numeric "Application ID" (this is the client_id below)
 //   3. Go to "Rich Presence" -> "Art Assets" and upload your images there,
 //      giving each one a short key name (e.g. "mineboostv2_logo")
 //   4. Use that key name (not the file) as large_image/small_image here.
 // Discord does not accept raw image bytes over the RPC protocol.
+//
+// Alternatively, a direct "https://..." URL works too for large_image,
+// without needing to be pre-uploaded as an Art Asset -- Discord's client
+// fetches it itself. This is how the skin face is populated: there's no
+// image upload step for that, since it's a different URL per player.
+// NOTE: this URL passthrough only works for large_image. small_image
+// still requires a pre-uploaded Art Asset key name; passing it a raw URL
+// just produces a broken-image placeholder client-side. See the comment
+// on updateLargeImage() below.
 class DiscordRPC
 {
 public:
@@ -47,6 +56,30 @@ public:
 
 	// Removes the activity without disconnecting.
 	void clearActivity();
+
+	// Swaps out just the small (badge) image/text of the currently shown
+	// activity, keeping everything else (details, state, large image,
+	// elapsed time) untouched.
+	void updateSmallImage(const std::string &small_image, const std::string &small_text);
+
+	// Same as updateSmallImage(), but for the large image/text instead.
+	// Used to patch in the player's real skin face once it has finished
+	// rendering/uploading, without restarting the "elapsed time" counter
+	// the way a full setActivity() call with reset_timestamp=true would.
+	//
+	// IMPORTANT: this project relies on being able to pass a plain
+	// "https://..." URL (not a pre-uploaded Art Asset key) so a different
+	// image can be shown per player/texture pack. Discord's local IPC
+	// SET_ACTIVITY only resolves such raw URLs for `large_image` -- for
+	// `small_image` it only accepts a pre-uploaded Art Asset key name and
+	// silently shows a broken-image placeholder for anything else. This
+	// is a real, confirmed quirk of the classic desktop Rich Presence
+	// protocol (unrelated to the newer Embedded App SDK, whose docs
+	// mention URL support for both slots -- that's a different, unrelated
+	// transport). Practical implication: the skin face URL MUST go in
+	// large_image, and any static logo key must go in small_image, not
+	// the other way around.
+	void updateLargeImage(const std::string &large_image, const std::string &large_text);
 
 	// Call periodically (once every second or so is plenty) from the
 	// main loop. Retries the connection if Discord wasn't running yet,

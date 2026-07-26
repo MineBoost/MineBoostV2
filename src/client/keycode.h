@@ -55,6 +55,8 @@ extern const KeyPress EscapeKey;
 extern const KeyPress LMBKey;
 extern const KeyPress MMBKey; // Middle Mouse Button
 extern const KeyPress RMBKey;
+extern const KeyPress X1Key; // Side mouse button ("back", aka Mouse4)
+extern const KeyPress X2Key; // Side mouse button ("forward", aka Mouse5)
 
 // Key configuration getter
 const KeyPress &getKeySetting(const char *settingname);

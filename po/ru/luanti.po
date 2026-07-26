@@ -2064,6 +2064,42 @@ msgid "Aux1"
 msgstr "Aux1"
 
 #: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 1"
+msgstr "Слот 1"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 2"
+msgstr "Слот 2"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 3"
+msgstr "Слот 3"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 4"
+msgstr "Слот 4"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 5"
+msgstr "Слот 5"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 6"
+msgstr "Слот 6"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 7"
+msgstr "Слот 7"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 8"
+msgstr "Слот 8"
+
+#: src/gui/guiKeyChangeMenu.cpp
+msgid "Slot 9"
+msgstr "Слот 9"
+
+#: src/gui/guiKeyChangeMenu.cpp
 msgid "Backward"
 msgstr "Назад"
 

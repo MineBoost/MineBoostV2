@@ -2,9 +2,9 @@
 
 enum SettingCategory {
     GUI,
-    PVP,
     RENDER,
     MISC,
+    Scrollbars,
     NONE_C
 };
 

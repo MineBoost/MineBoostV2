@@ -118,6 +118,11 @@ void set_default_settings()
 	settings->setDefault("curl_timeout", "20000");
 	settings->setDefault("curl_parallel_limit", "8");
 	settings->setDefault("curl_file_download_timeout", "300000");
+	// MineBoostV2 presence -- see src/client/mineboost_presence.h for the
+	// full protocol. The client POSTs to "<this>/presence" (see
+	// MineBoostPresence::step() in src/client/mineboost_presence.cpp) --
+	// no trailing slash here, that's added there.
+	settings->setDefault("mineboost_presence_server_url", "https://node-server--Pryanilk.replit.app");
 	settings->setDefault("curl_verify_cert", "true");
 	settings->setDefault("enable_remote_media_server", "true");
 	settings->setDefault("enable_client_modding", "true");
@@ -166,9 +171,10 @@ void set_default_settings()
 	settings->setDefault("keymap_toggle_hud", "KEY_F1");
 	settings->setDefault("keymap_toggle_chat", "KEY_F2");
 	settings->setDefault("keymap_toggle_fog", "KEY_F3");
-	settings->setDefault("keymap_sprite_manager", "KEY_KEY_H");
+	settings->setDefault("keymap_sprite_manager", "");
 	settings->setDefault("keymap_toggle_left_hand", "KEY_KEY_F");
 	settings->setDefault("keymap_menu", "KEY_RSHIFT");
+	settings->setDefault("keymap_macro_wheel", "KEY_TAB");
 #ifndef NDEBUG
 	settings->setDefault("keymap_toggle_update_camera", "KEY_F4");
 #else
@@ -282,8 +288,6 @@ void set_default_settings()
 	settings->setDefault("menu_clouds", "true");
 	settings->setDefault("translucent_liquids", "true");
 	settings->setDefault("console_height", "0.6");
-	settings->setDefault("console_color", "(0,0,0)");
-	settings->setDefault("console_alpha", "200");
 	settings->setDefault("formspec_fullscreen_bg_color", "(0,0,0)");
 	settings->setDefault("formspec_fullscreen_bg_opacity", "140");
 	settings->setDefault("selectionbox_color", "(0,0,0)");
@@ -384,22 +388,91 @@ void set_default_settings()
 	// User Interface
 	settings->setDefault("show_coords", "false");
 	settings->setDefault("show_keys", "false");
+	// ShowCPS: split out of KeyStroker into its own independently
+	// toggleable/movable HUD -- see "cps_x"/"cps_y"/"cps_size" below and
+	// builtin/client/keystroker.lua.
+	settings->setDefault("show_cps", "false");
+	settings->setDefault("cps_x", "0");
+	settings->setDefault("cps_y", "160");
 	settings->setDefault("chat_x", "10");
 	settings->setDefault("chat_y", "0");
 
 	settings->setDefault("fullbright", "false");
 	settings->setDefault("fast_place", "false");
+	// NoFriendDamage: suppresses the actual punch/damage packet when the
+	// thing you're hitting is a player on your .friend list (client-side
+	// friend list, see src/client/friendlist.h) -- see the punch_is_protected_friend
+	// check in Game::handlePointingAtObject() in src/client/game.cpp.
+	settings->setDefault("no_friend_damage", "false");
 	settings->setDefault("node_illumination", "false");
 	settings->setDefault("node_color", "(255, 0, 0)");
+	settings->setDefault("target_hud", "true");
+	settings->setDefault("target_highlight_particles", "false");
+	settings->setDefault("target_highlight_color", "(60, 220, 255)");
+	settings->setDefault("target_highlight_particle_amount", "18");
+	settings->setDefault("hit_particle_amount", "120");
+	settings->setDefault("music_hud", "true");
+	settings->setDefault("inventory_hud", "true");
+	// Extra inventory lists to show as additional labeled sections within
+	// the same InventoryHud box, below the main grid -- comma-separated
+	// list names, e.g. "armor". Empty/missing lists on a given server are
+	// silently skipped. "craft"/"craftpreview" are always excluded here
+	// even if listed -- they belong to the dedicated CraftHud instead
+	// (see "craft_hud" below).
+	settings->setDefault("inventory_hud_extra_lists", "");
+	// CraftHud: separate on-screen box that shows only the crafting grid
+	// ("craft") and its result ("craftpreview"), so you can see what's in
+	// your craft without it cluttering the main InventoryHud. Only draws
+	// itself while the craft grid/result actually has something in it.
+	settings->setDefault("craft_hud", "true");
+	// ArmorHUD temporarily disabled -- settings kept here (commented) so
+	// re-enabling is a simple uncomment, not a re-derivation.
+	// settings->setDefault("armor_hud", "true");
+	// settings->setDefault("armor_hud_lists", "");
+	// settings->setDefault("armor_hud_keywords",
+	// 	"helmet,helm,chestplate,breastplate,cuirass,leggings,greaves,"
+	// 	"boots,gauntlets,gauntlet,shield,pauldron,armor,armour,tunic");
+	// settings->setDefault("armor_hud_show_held", "true");
 	settings->setDefault("discord_rpc_enabled", "true");
-	settings->setDefault("enable_hp_bar", "true");
-	settings->setDefault("enable_hp_bar.type", "text");
+	settings->setDefault("discord_rpc_show_nickname", "true");
+	settings->setDefault("discord_rpc_show_playing", "true");
+	settings->setDefault("discord_rpc_hidden_servers", "");
 	settings->setDefault("small_post_effect_color", "false");
 	settings->setDefault("fov_custom", "true");
 	settings->setDefault("fov_custom.data", "75");
 	settings->setDefault("show_fps", "true");
+	settings->setDefault("show_ping", "true");
 	settings->setDefault("fast_place_value", "0.16");
 	settings->setDefault("left_hand", "true");
+
+	// Per-HUD-element outline color customization (MineBoost). Each only
+	// recolors that element's border/outline -- fill stays a fixed shade,
+	// same as always -- see drawHudColorPanel() in src/client/hud.cpp and
+	// the "Colors" panel in src/gui/custom_menu/Menu.cpp.
+	settings->setDefault("hud_color_coords", "(255,255,255)");
+	settings->setDefault("hud_color_fps", "(255,255,255)");
+	settings->setDefault("hud_color_ping", "(255,255,255)");
+	settings->setDefault("hud_color_photo", "(255,255,255)");
+	settings->setDefault("hud_color_music", "(22,24,30)");
+	settings->setDefault("hud_color_inventory", "(22,24,30)");
+	settings->setDefault("hud_color_craft", "(22,24,30)");
+	settings->setDefault("hud_color_target", "(22,24,30)");
+	// KeyStroker's backdrop (textures/base/pack/keys_panel_bg.png, tinted
+	// via the "number" field on its "image" HUD element -- see
+	// keys_bg_hud in builtin/client/keystroker.lua) IS the visible
+	// outline around the W/A/S/D icon cluster, so this setting recolors
+	// exactly that. White (unchanged) by default.
+	settings->setDefault("hud_color_keystroker_border", "(255,255,255)");
+	// ShowCPS's backdrop (cps_bg_hud, textures/base/pack/cps_panel_bg.png)
+	// works exactly the same way KeyStroker's does above.
+	settings->setDefault("hud_color_cps_border", "(255,255,255)");
+	// Border color of the "Move HUD" edit-mode drag-preview boxes (the
+	// KeyStroker/CPS/InventoryHUD/CraftHUD/MusicHUD/etc. drag rectangles) --
+	// separate from the individual hud_color_* fills/tints above. Default
+	// matches ModernUI::PanelBorder's "soft accent blue" (see
+	// src/gui/custom_menu/ModernUI.h) so nothing changes visually until the
+	// player actually picks a different color for it.
+	settings->setDefault("hud_preview_border_color", "(90,150,250)");
 
 	settings->setDefault("pos_data", "(0, 0)");
 	settings->setBool("use_custom_fog_color", "false");
@@ -410,6 +483,69 @@ void set_default_settings()
 
 	settings->setDefault("keys_x", "0");
 	settings->setDefault("keys_y", "0");
+	settings->setDefault("music_hud_x", "-1");
+	settings->setDefault("music_hud_y", "10");
+	settings->setDefault("target_hud_x", "-1");
+	settings->setDefault("target_hud_y", "-1");
+	settings->setDefault("inventory_hud_x", "-1");
+	settings->setDefault("inventory_hud_y", "-1");
+	settings->setDefault("craft_hud_x", "-1");
+	settings->setDefault("craft_hud_y", "-1");
+	// settings->setDefault("armor_hud_x", "-1"); // ArmorHUD temporarily disabled
+	// settings->setDefault("armor_hud_y", "-1"); // ArmorHUD temporarily disabled
+	// Photo HUD: shows one of the built-in photos (face/cat_kuki/mellstroy,
+	// see textures/base/pack/) while a GUI is open. "photo_hud_image"
+	// selects which one; cycled via the settings menu (see Menu.cpp).
+	settings->setDefault("photo_hud", "false");
+	settings->setDefault("photo_hud_image", "face"); // "face", "cat_kuki" or "mellstroy"
+	settings->setDefault("photo_hud_x", "-1");
+	settings->setDefault("photo_hud_y", "-1");
+	settings->setDefault("photo_hud_size", "200");
+	// Global size multiplier for MineBoost's custom-drawn HUD elements
+	// (coords/FPS/ping/KeyStroker/Music HUD/Target HUD/Photo HUD) --
+	// separate from the engine's own "hud_scaling", so it only affects
+	// these MineBoost HUDs. Adjustable via the "HUD Size" slider in the
+	// settings menu (Scrollbars category).
+	settings->setDefault("hud_size", "1.0");
+
+	// Per-element size multipliers -- on top of "hud_size" above, each
+	// draggable HUD can be individually resized while in "Move HUD" edit
+	// mode by scrolling the mouse wheel over it (see Menu.cpp OnEvent()).
+	settings->setDefault("coords_size", "1.0");
+	settings->setDefault("fps_size", "1.0");
+	settings->setDefault("ping_size", "1.0");
+	settings->setDefault("keys_size", "1.0");
+	settings->setDefault("cps_size", "1.0");
+	settings->setDefault("music_hud_size", "1.0");
+	settings->setDefault("target_hud_size", "1.0");
+	settings->setDefault("inventory_hud_size", "1.0");
+	settings->setDefault("craft_hud_size", "1.0");
+
+	// Snap-to-grid for "Move HUD" edit mode (see src/gui/custom_menu/Menu.cpp).
+	// Toggle with G while in edit mode; hold Alt while dragging to bypass
+	// it for one drag. Grid spacing is adjustable by scrolling over empty
+	// space (not over any HUD element) while in edit mode.
+	settings->setDefault("hud_grid_enabled", "true");
+	settings->setDefault("hud_grid_size", "20");
+
+	// HandView -- reposition/rescale the wielded item/hand (see
+	// src/client/camera.cpp, applied on top of the normal swing). Off by
+	// default so vanilla feel/position is unchanged until the user drags
+	// it or opens its picker panel in the settings menu.
+	settings->setDefault("handview_enabled", "false");
+	settings->setDefault("handview_offset_x", "0");
+	settings->setDefault("handview_offset_y", "0");
+	settings->setDefault("handview_offset_z", "0");
+	settings->setDefault("handview_scale", "1.0");
+
+	// Hand/wielditem swing animation style -- see src/client/camera.cpp.
+	// One of: vanilla, static, fast, sway, chime, old, punch, tilt.
+	settings->setDefault("hand_anim_style", "vanilla");
+	// NoViewBob: suppresses only the small idle wielditem wobble tied to
+	// walking (see the "no_view_bob" check in the wielded-item block of
+	// Camera::update() in src/client/camera.cpp) -- attack/dig swings and
+	// item-use animations are a separate code path and are unaffected.
+	settings->setDefault("no_view_bob", "false");
 	// Main menu
 	settings->setDefault("main_menu_path", "");
 	settings->setDefault("serverlist_file", "favoriteservers.json");

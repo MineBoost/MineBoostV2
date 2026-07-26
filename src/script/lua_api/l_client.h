@@ -93,6 +93,12 @@ private:
 
     static int l_is_moved(lua_State* L);
 
+    // get_screen_size() -- current *actual* viewport size in pixels, live
+    // (unlike the "screen_width"/"screen_height" settings, which are just
+    // the configured fullscreen resolution and can be completely wrong
+    // for windowed play or after a resize).
+    static int l_get_screen_size(lua_State* L);
+
 public:
 	static void Initialize(lua_State *L, int top);
 };

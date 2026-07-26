@@ -20,7 +20,7 @@
 
 #include "mainmenumanager.h"  // for g_gamecallback
 
-#define KMaxButtonPerColumns 12
+#define KMaxButtonPerColumns 16
 
 extern MainGameCallback *g_gamecallback;
 
@@ -62,6 +62,19 @@ enum
 	GUI_ID_KEY_DEC_RANGE_BUTTON,
 	GUI_ID_KEY_INC_RANGE_BUTTON,
 	GUI_ID_KEY_AUTOFWD_BUTTON,
+	GUI_ID_KEY_MINEBOOST_MENU_BUTTON,
+	GUI_ID_KEY_SLOT1_BUTTON,
+	GUI_ID_KEY_SLOT2_BUTTON,
+	GUI_ID_KEY_SLOT3_BUTTON,
+	GUI_ID_KEY_SLOT4_BUTTON,
+	GUI_ID_KEY_SLOT5_BUTTON,
+	GUI_ID_KEY_SLOT6_BUTTON,
+	GUI_ID_KEY_SLOT7_BUTTON,
+	GUI_ID_KEY_SLOT8_BUTTON,
+	GUI_ID_KEY_SLOT9_BUTTON,
+	GUI_ID_KEY_DIG_BUTTON,
+	GUI_ID_KEY_PLACE_BUTTON,
+	GUI_ID_KEY_MACRO_WHEEL_BUTTON,
 	// other
 	GUI_ID_CB_AUX1_DESCENDS,
 	GUI_ID_CB_DOUBLETAP_JUMP,
@@ -94,7 +107,7 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 	removeAllChildren();
 	key_used_text = nullptr;
 
-	ScalingInfo info = getScalingInfo(screensize, v2u32(835, 430));
+	ScalingInfo info = getScalingInfo(screensize, v2u32(835, 620));
 	const float s = info.scale;
 	DesiredRect = info.rect;
 	recalculateAbsolutePosition(false);
@@ -131,13 +144,18 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 			k->button = GUIButton::addButton(Environment, rect, m_tsrc, this, k->id,
 					wstrgettext(k->key.name()).c_str());
 		}
-		if ((i + 1) % KMaxButtonPerColumns == 0) {
+		if ((i + 1) % KMaxButtonPerColumns == 0 && i + 1 < key_settings.size()) {
 			offset.X += 260 * s;
 			offset.Y = 60 * s;
 		} else {
 			offset += v2s32(0, 25 * s);
 		}
 	}
+
+	// Always anchor the checkboxes below a full-height column (regardless of
+	// how many keybinding rows actually landed in the last column), so they
+	// never overlap the Save/Cancel buttons at the bottom of the menu.
+	offset.Y = 60 * s + KMaxButtonPerColumns * 25 * s;
 
 	{
 		s32 option_x = offset.X;
@@ -168,14 +186,14 @@ void GUIKeyChangeMenu::regenerateGui(v2u32 screensize)
 	{
 		s32 option_x = offset.X;
 		s32 option_y = offset.Y + 5 * s;
-		u32 option_w = 280;
+		u32 option_w = 280 * s;
 		{
 			core::rect<s32> rect(0, 0, option_w, 30 * s);
 			rect += topleft + v2s32(option_x, option_y);
 			Environment->addCheckBox(g_settings->getBool("autojump"), rect, this,
 					GUI_ID_CB_AUTOJUMP, wstrgettext("Automatic jumping").c_str());
 		}
-		offset += v2s32(0, 25);
+		offset += v2s32(0, 25 * s);
 	}
 
 	{
@@ -305,6 +323,52 @@ bool GUIKeyChangeMenu::OnEvent(const SEvent& event)
 			active_key = nullptr;
 			return true;
 		}
+	} else if (event.EventType == EET_MOUSE_INPUT_EVENT && active_key) {
+		// Mouse-button half of the same capture flow as the keyboard
+		// branch above -- needed because some actions (Dig/Punch/Use,
+		// Place/Use) default to mouse buttons, and the user should be
+		// able to rebind them to a *different* mouse button just as
+		// easily as to a keyboard key. Left/Right/Middle/X1/X2 are all
+		// eligible; mouse-move and the wheel are ignored here (silently
+		// falls through) since they aren't meaningful bind targets for a
+		// held action like digging.
+		const KeyPress *kp_ptr = nullptr;
+		switch (event.MouseInput.Event) {
+			case EMIE_LMOUSE_PRESSED_DOWN: kp_ptr = &LMBKey; break;
+			case EMIE_RMOUSE_PRESSED_DOWN: kp_ptr = &RMBKey; break;
+			case EMIE_MMOUSE_PRESSED_DOWN: kp_ptr = &MMBKey; break;
+			case EMIE_XBUTTON1_PRESSED_DOWN: kp_ptr = &X1Key; break;
+			case EMIE_XBUTTON2_PRESSED_DOWN: kp_ptr = &X2Key; break;
+			default: break;
+		}
+		if (!kp_ptr)
+			return true; // swallow mouse-move/wheel/up events mid-capture
+
+		KeyPress kp = *kp_ptr;
+
+		bool key_in_use = false;
+		for (key_setting *ks : key_settings) {
+			if (ks != active_key && ks->key == kp) {
+				key_in_use = true;
+				break;
+			}
+		}
+
+		if (key_in_use && !this->key_used_text) {
+			core::rect<s32> rect(0, 0, 600, 40);
+			rect += v2s32(0, 0) + v2s32(25, 30);
+			this->key_used_text = gui::StaticText::add(Environment,
+					wstrgettext("Key already in use"),
+					rect, false, true, this, -1);
+		} else if (!key_in_use && this->key_used_text) {
+			this->key_used_text->remove();
+			this->key_used_text = nullptr;
+		}
+
+		active_key->key = kp;
+		active_key->button->setText(wstrgettext(kp.name()).c_str());
+		active_key = nullptr;
+		return true;
 	} else if (event.EventType == EET_KEY_INPUT_EVENT && !active_key
 			&& event.KeyInput.PressedDown
 			&& event.KeyInput.Key == irr::KEY_ESCAPE) {
@@ -402,4 +466,28 @@ void GUIKeyChangeMenu::init_keys()
 	this->add_key(GUI_ID_KEY_CHATLOG_BUTTON,      wstrgettext("Toggle chat log"),  "keymap_toggle_chat");
 	this->add_key(GUI_ID_KEY_FOG_BUTTON,          wstrgettext("Toggle fog"),       "keymap_toggle_fog");
 	this->add_key(GUI_ID_BIND_LH,          		  wstrgettext("Switch hand"),      "keymap_toggle_left_hand");
+	this->add_key(GUI_ID_KEY_MINEBOOST_MENU_BUTTON,  wstrgettext("MineBoost menu"),   "keymap_menu");
+	this->add_key(GUI_ID_KEY_SLOT1_BUTTON,        wstrgettext("Slot 1"),           "keymap_slot1");
+	this->add_key(GUI_ID_KEY_SLOT2_BUTTON,        wstrgettext("Slot 2"),           "keymap_slot2");
+	this->add_key(GUI_ID_KEY_SLOT3_BUTTON,        wstrgettext("Slot 3"),           "keymap_slot3");
+	this->add_key(GUI_ID_KEY_SLOT4_BUTTON,        wstrgettext("Slot 4"),           "keymap_slot4");
+	this->add_key(GUI_ID_KEY_SLOT5_BUTTON,        wstrgettext("Slot 5"),           "keymap_slot5");
+	this->add_key(GUI_ID_KEY_SLOT6_BUTTON,        wstrgettext("Slot 6"),           "keymap_slot6");
+	this->add_key(GUI_ID_KEY_SLOT7_BUTTON,        wstrgettext("Slot 7"),           "keymap_slot7");
+	this->add_key(GUI_ID_KEY_SLOT8_BUTTON,        wstrgettext("Slot 8"),           "keymap_slot8");
+	this->add_key(GUI_ID_KEY_SLOT9_BUTTON,        wstrgettext("Slot 9"),           "keymap_slot9");
+	// Already fully supported by the engine (isKeyDown(KeyType::DIG)/
+	// KeyType::PLACE in Game::processPlayerInteraction, src/client/game.cpp)
+	// via the "keymap_dig"/"keymap_place" settings -- they just weren't
+	// exposed here before, so they always stayed on their LMB/RMB
+	// defaults. Can be rebound to any keyboard key or mouse button
+	// (including the side buttons, now wired into the input handler --
+	// see X1Key/X2Key in src/client/keycode.h/.cpp and the
+	// EMIE_XBUTTON1/2_* cases in src/client/inputhandler.cpp).
+	this->add_key(GUI_ID_KEY_DIG_BUTTON,          wstrgettext("Dig/punch/use"),    "keymap_dig");
+	this->add_key(GUI_ID_KEY_PLACE_BUTTON,        wstrgettext("Place/use"),        "keymap_place");
+	// Hold to open the Macro Wheel, scroll to pick a saved command,
+	// release to run it. Commands are added via ".macro add <command>"
+	// in chat -- see MacroList / Hud::drawMacroWheel().
+	this->add_key(GUI_ID_KEY_MACRO_WHEEL_BUTTON,  wstrgettext("Macro Wheel"),      "keymap_macro_wheel");
 }

@@ -3,6 +3,8 @@
 // Copyright (C) 2015 nerzhul, Loic Blot <loic.blot@unix-experience.fr>
 
 #include "client/client.h"
+#include "client/mineboost_presence.h"
+#include "porting.h"
 
 #include "exceptions.h"
 #include "irr_v2d.h"
@@ -1686,6 +1688,11 @@ void Client::handleCommand_ModChannelMsg(NetworkPacket *pkt)
 	if (!m_modchannel_mgr->channelRegistered(channel_name)) {
 		verbosestream << "Server sent us messages on unregistered channel "
 			<< channel_name << ", ignoring." << std::endl;
+		return;
+	}
+
+	if (channel_name == MineBoostPresence::CHANNEL) {
+		MineBoostPresence::get().noteSeen(sender, porting::getTimeMs());
 		return;
 	}
 

@@ -7,6 +7,7 @@
 #include "porting.h"
 #include "util/string.h"
 #include "log.h"
+#include <cctype>
 #include <fstream>
 
 FriendList &FriendList::get()
@@ -17,6 +18,9 @@ FriendList &FriendList::get()
 
 FriendList::FriendList()
 {
+	// Fallback list used before we know which server we're on (e.g. if
+	// something touches the list from the main menu). Once setServer()
+	// is called this is replaced by a per-server list.
 	m_path = porting::path_user + DIR_DELIM + "friends.txt";
 	load();
 }
@@ -24,6 +28,38 @@ FriendList::FriendList()
 std::string FriendList::normalize(const std::string &name)
 {
 	return lowercase(trim(name));
+}
+
+std::string FriendList::sanitizeForFilename(const std::string &s)
+{
+	std::string out;
+	out.reserve(s.size());
+	for (char c : s) {
+		if (isalnum((unsigned char)c) || c == '.' || c == '-' || c == '_')
+			out += c;
+		else
+			out += '_';
+	}
+	return out;
+}
+
+void FriendList::setServer(const std::string &server_key)
+{
+	if (server_key == m_server_key)
+		return; // already using this server's list
+
+	// Persist whatever's currently loaded before switching away from it
+	// (covers the fallback list, or the previous server if we're
+	// reconnecting to a different one mid-session).
+	save();
+
+	m_server_key = server_key;
+	m_path = porting::path_user + DIR_DELIM + "friends_" +
+		sanitizeForFilename(server_key) + ".txt";
+
+	m_friends.clear();
+	m_friends_display.clear();
+	load();
 }
 
 bool FriendList::add(const std::string &name)

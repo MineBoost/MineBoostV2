@@ -324,6 +324,34 @@ void DiscordRPC::setActivity(const std::string &details, const std::string &stat
 	sendActivityFrame();
 }
 
+void DiscordRPC::updateSmallImage(const std::string &small_image, const std::string &small_text)
+{
+	if (!m_has_activity)
+		return; // nothing shown yet, nothing to patch
+
+	m_last_small_image = small_image;
+	m_last_small_text = small_text;
+
+	if (!m_enabled || !m_connected)
+		return; // will go out with the rest next time we (re)connect
+
+	sendActivityFrame();
+}
+
+void DiscordRPC::updateLargeImage(const std::string &large_image, const std::string &large_text)
+{
+	if (!m_has_activity)
+		return; // nothing shown yet, nothing to patch
+
+	m_last_large_image = large_image;
+	m_last_large_text = large_text;
+
+	if (!m_enabled || !m_connected)
+		return; // will go out with the rest next time we (re)connect
+
+	sendActivityFrame();
+}
+
 void DiscordRPC::resendCachedActivity()
 {
 	if (!m_has_activity || !m_enabled || !m_connected)
@@ -356,6 +384,26 @@ void DiscordRPC::sendActivityFrame()
 	}
 	if (!assets.empty())
 		activity["assets"] = assets;
+
+	// Static "join our community" buttons shown on the Discord profile
+	// card -- Discord's IPC protocol allows at most 2 buttons per
+	// activity, each just a label + url.
+	Json::Value buttons(Json::arrayValue);
+	Json::Value discord_button;
+	discord_button["label"] = "Discord";
+	discord_button["url"] = "https://discord.gg/7RjkXHnYpQ";
+	buttons.append(discord_button);
+	Json::Value telegram_button;
+	telegram_button["label"] = "Telegram Channel";
+	telegram_button["url"] = "https://t.me/Pryanilk";
+	buttons.append(telegram_button);
+	activity["buttons"] = buttons;
+	// Every other Discord RPC client library (discord-rpc-go,
+	// discordrpc-py, discord-rpc-native, etc.) always sends "instance"
+	// alongside the rest of the activity, even when not using
+	// join/spectate secrets, so it's included here for parity -- costs
+	// nothing and rules it out as a contributing factor.
+	activity["instance"] = true;
 
 	Json::Value args;
 	args["pid"] = (Json::Int)getCurrentPid();

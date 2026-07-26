@@ -944,7 +944,7 @@ void GenericCAO::updateNametag()
 		// Add nametag
 		m_nametag = m_client->getCamera()->addNametag(node,
 			m_prop.nametag, m_prop.nametag_color,
-			m_prop.nametag_bgcolor, pos);
+			m_prop.nametag_bgcolor, pos, m_name);
 	} else {
 		// Update nametag
 		m_nametag->text = m_prop.nametag;

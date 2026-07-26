@@ -502,6 +502,47 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 #define WHEEL_DELTA 120
 #endif
 
+	// Extra/"side" mouse buttons (X1/X2, aka Mouse4/Mouse5) -- handled
+	// separately from the mouseMap table below since a single Windows
+	// message (WM_XBUTTONDOWN/UP) covers both buttons, distinguished by
+	// the button number packed into the high word of wParam (this is
+	// what the GET_XBUTTON_WPARAM macro from windowsx.h extracts; it's
+	// inlined here to avoid pulling in that header just for this).
+	if (message == WM_XBUTTONDOWN || message == WM_XBUTTONUP) {
+		irr::CIrrDeviceWin32 *dev = getDeviceFromHWnd(hWnd);
+		if (dev) {
+			irr::s32 xbutton = (irr::s32)(short)HIWORD(wParam); // 1 = X1, 2 = X2
+			irr::SEvent event;
+			event.EventType = irr::EET_MOUSE_INPUT_EVENT;
+			event.MouseInput.X = (short)LOWORD(lParam);
+			event.MouseInput.Y = (short)HIWORD(lParam);
+			event.MouseInput.Shift = ((LOWORD(wParam) & MK_SHIFT) != 0);
+			event.MouseInput.Control = ((LOWORD(wParam) & MK_CONTROL) != 0);
+			event.MouseInput.ButtonStates = wParam & (MK_LBUTTON | MK_RBUTTON);
+			if (wParam & MK_MBUTTON)
+				event.MouseInput.ButtonStates |= irr::EMBSM_MIDDLE;
+			if (wParam & MK_XBUTTON1)
+				event.MouseInput.ButtonStates |= irr::EMBSM_EXTRA1;
+			if (wParam & MK_XBUTTON2)
+				event.MouseInput.ButtonStates |= irr::EMBSM_EXTRA2;
+			event.MouseInput.Wheel = 0.f;
+
+			bool down = (message == WM_XBUTTONDOWN);
+			if (xbutton == 1)
+				event.MouseInput.Event = down ? irr::EMIE_XBUTTON1_PRESSED_DOWN : irr::EMIE_XBUTTON1_LEFT_UP;
+			else if (xbutton == 2)
+				event.MouseInput.Event = down ? irr::EMIE_XBUTTON2_PRESSED_DOWN : irr::EMIE_XBUTTON2_LEFT_UP;
+			else
+				event.MouseInput.Event = irr::EMIE_COUNT; // unknown button number, ignore below
+
+			if (event.MouseInput.Event != irr::EMIE_COUNT)
+				dev->postEventFromUser(event);
+		}
+		// Per MSDN: an application that processes WM_XBUTTONDOWN/UP
+		// should return TRUE.
+		return TRUE;
+	}
+
 	irr::CIrrDeviceWin32 *dev = 0;
 	irr::SEvent event;
 

@@ -148,6 +148,22 @@ enum EMOUSE_INPUT_EVENT
 	//! Only generated on emscripten
 	EMIE_MOUSE_LEAVE_CANVAS,
 
+	//! Extra/"back" mouse button (X1 / XBUTTON1, aka "Mouse4") was pressed
+	//! down. Only generated on the Win32 and SDL2 device backends.
+	EMIE_XBUTTON1_PRESSED_DOWN,
+
+	//! Extra/"back" mouse button (X1 / XBUTTON1, aka "Mouse4") was
+	//! released. Only generated on the Win32 and SDL2 device backends.
+	EMIE_XBUTTON1_LEFT_UP,
+
+	//! Extra/"forward" mouse button (X2 / XBUTTON2, aka "Mouse5") was
+	//! pressed down. Only generated on the Win32 and SDL2 device backends.
+	EMIE_XBUTTON2_PRESSED_DOWN,
+
+	//! Extra/"forward" mouse button (X2 / XBUTTON2, aka "Mouse5") was
+	//! released. Only generated on the Win32 and SDL2 device backends.
+	EMIE_XBUTTON2_LEFT_UP,
+
 	//! No real event. Just for convenience to get number of events
 	EMIE_COUNT
 };

@@ -16,6 +16,9 @@
 #include "client/content_cao.h"
 #include "client/clientenvironment.h"
 #include "client/friendlist.h"
+#include "client/mineboost_presence.h"
+#include "client/texturesource.h"
+#include "porting.h"
 #include "settings.h"
 #include "wieldmesh.h"
 #include "noise.h"         // easeCurve
@@ -285,103 +288,6 @@ void Camera::addArmInertia(f32 player_yaw)
 	}
 }
 
-void Camera::drawHealthBar()
-{
-    // ClientEnvironment &env = m_client->getEnv();
-    // gui::IGUIFont *font = g_fontengine->getFont();
-    // std::unordered_map<u16, ClientActiveObject*> allObjects;
-    // env.getAllActiveObjects(allObjects);
-	// f32 fovScale = 72 / m_curr_fov_degrees;
-    // video::IVideoDriver *driver = RenderingEngine::get_video_driver();
-    // core::matrix4 trans = m_cameranode->getProjectionMatrix() * m_cameranode->getViewMatrix();
-    // v2u32 screensize = driver->getScreenSize();
-
-    // for (auto &it : allObjects) {
-    //     ClientActiveObject *cao = it.second;
-    //     GenericCAO *obj = dynamic_cast<GenericCAO *>(cao);
-	// 	if (obj->isLocalPlayer())
-	// 		continue;
-	// 	if (!obj->isPlayer())
-	// 		continue;
-
-    //     v3f textPos = obj->getSceneNode()->getAbsolutePosition();;
-
-	// 	if (g_settings->get("enable_hp_bar.type") == "image") {
-	// 		textPos.Y += 9.0f;
-	// 	} else {
-	// 		textPos.Y += 22.0f;
-	// 	}
-    //     f32 transformed_pos[4] = { textPos.X, textPos.Y, textPos.Z, 1.0f };
-
-    //     trans.multiplyWith1x4Matrix(transformed_pos);
-    //     if (transformed_pos[3] > 0) {
-	// 		if ( g_settings->get("enable_hp_bar.type") == "image") {
-	// 			double health_percentage = obj->getProperties().hp_max > 0 ? static_cast<double>(obj->getHp()) / obj->getProperties().hp_max : 0.0;
-	// 			health_percentage = std::max(0.0, std::min(1.0, health_percentage));
-	// 			video::SColor backgroundColor(255, 5, 10, 15);
-	// 			video::SColor borderColor(255, 0, 0, 0);
-	// 			// Interpolate color components
-	// 			u8 red = static_cast<u8>(255 * (1.0f - health_percentage));
-	// 			u8 green = static_cast<u8>(255 * health_percentage);
-
-	// 			// Create the interpolated color
-	// 			video::SColor filledColor = video::SColor(255, red, green, 0);
-
-	// 			// Perspective scaling factor (derived from zDiv)
-	// 			f32 zDiv = transformed_pos[3] == 0.0f ? 1.0f : core::reciprocal(transformed_pos[3]);
-	// 			f32 scale = zDiv; // Scale inversely proportional to distance
-	// 			scale = std::min(scale, 3.0f);
-	// 			s32 barWidth = static_cast<s32>((1000 * scale) * fovScale);
-	// 			s32 barHeight = static_cast<s32>((15000 * scale) * fovScale);
-	// 			s32 baseBarOffset = static_cast<s32>((6000 * scale) * fovScale);
-
-	// 			// Calculate the screen position
-	// 			v2s32 screen_pos;
-	// 			screen_pos.X = screensize.X *
-	// 				(0.5 * transformed_pos[0] * zDiv + 0.5) - barWidth / 2;
-	// 			screen_pos.Y = screensize.Y *
-	// 				(0.5 - transformed_pos[1] * zDiv * 0.5) - barHeight / 2;
-
-	// 			// Define the bar rectangle and calculate the filled portion
-	// 			core::rect<s32> barRect(baseBarOffset, 0, baseBarOffset + barWidth, barHeight);
-	// 			s32 fillHeight = static_cast<s32>(barRect.getHeight() * health_percentage);
-	// 			core::rect<s32> filledRect(
-	// 				barRect.UpperLeftCorner.X,
-	// 				barRect.LowerRightCorner.Y - fillHeight, // Start from the bottom
-	// 				barRect.LowerRightCorner.X,
-	// 				barRect.LowerRightCorner.Y
-	// 			);
-
-	// 			// Draw the health bar
-	// 			driver->draw2DRectangle(backgroundColor, barRect + screen_pos);
-	// 			driver->draw2DRectangle(filledColor, filledRect + screen_pos);
-	// 			driver->draw2DRectangleOutline(barRect + screen_pos, borderColor, barWidth * 0.2);
-	// 			continue;
-	// 		} else if (g_settings->get("enable_hp_bar.type") == "text") {
-	// 			std::string hpText = "HP: " + std::to_string(obj->getHp());
-	// 			core::dimension2d<u32> textsize = font->getDimension(utf8_to_wide(hpText).c_str());
-	// 			f32 zDiv = transformed_pos[3] == 0.0f ? 1.0f : core::reciprocal(transformed_pos[3]);
-	// 			v2s32 screen_pos;
-	// 			screen_pos.X = screensize.X *
-	// 				(0.5 * transformed_pos[0] * zDiv + 0.5) - textsize.Width / 2;
-	// 			screen_pos.Y = screensize.Y *
-	// 				(0.5 - transformed_pos[1] * zDiv * 0.5) - textsize.Height / 2;
-
-	// 			core::rect<s32> size(0, 0, textsize.Width, textsize.Height);
-	// 			if (font) {
-	// 				font->draw(
-	// 					utf8_to_wide(hpText).c_str(),
-	// 					size + screen_pos,
-	// 					video::SColor(255, 255, 255, 255),
-	// 					true,
-	// 					true
-	// 				);
-	// 			}
-	// 		}
-    //     }
-    // }
-}
-
 void Camera::update(LocalPlayer* player, f32 frametime, f32 tool_reload_ratio)
 {
 	// Get player position
@@ -611,7 +517,27 @@ void Camera::update(LocalPlayer* player, f32 frametime, f32 tool_reload_ratio)
 	v3f wield_position = v3f(m_wieldmesh_offset.X, m_wieldmesh_offset.Y, 65);
 	v3f wield_rotation = v3f(-100, 120, -100);
 	wield_position.Y += std::abs(m_wield_change_timer)*320 - 40;
-	if(m_digging_anim < 0.05 || m_digging_anim > 0.5)
+	// Hand/wielditem swing animation style -- see "hand_anim_style" in
+	// src/gui/custom_menu/Menu.cpp (HandView picker panel). "vanilla" is
+	// the original Luanti swing untouched; the rest are alternate feels
+	// inspired by the swing-style options in clients like Lunarchy.
+	// Declared here (moved up from just below the block right after this
+	// one) so the reload-dip block can check it too.
+	std::string hand_anim_style = g_settings->get("hand_anim_style");
+
+	// Vanilla's own post-swing "settle" dip, tied to tool_reload_ratio.
+	// This used to run completely unconditionally, regardless of
+	// hand_anim_style -- which meant every custom style (Tilt included)
+	// got this exact vanilla downward dip bleeding into roughly the
+	// first 5% and the entire second half of every swing cycle (that's
+	// what "m_digging_anim < 0.05 || m_digging_anim > 0.5" covers), on
+	// top of whatever that style's own branch below was doing. For Tilt
+	// specifically, whose whole point is that the hand doesn't move
+	// through space at all, that showed up as the hand suddenly dropping
+	// partway through an attack -- the vanilla arc "slipping through".
+	// Gated to vanilla only now, same as it always visually was for that
+	// style anyway.
+	if (hand_anim_style == "vanilla" && (m_digging_anim < 0.05 || m_digging_anim > 0.5))
 	{
 		f32 frac = 1.0;
 		if(m_digging_anim > 0.5)
@@ -623,25 +549,171 @@ void Camera::update(LocalPlayer* player, f32 frametime, f32 tool_reload_ratio)
 		wield_position.X -= frac * 35.0f * std::pow(ratiothing2, 1.1f);
 		wield_rotation.Y += frac * 70.0f * std::pow(ratiothing2, 1.4f);
 	}
-	if (m_digging_button != -1)
+
+	if (m_digging_button != -1 && hand_anim_style != "static")
 	{
 		f32 digfrac = m_digging_anim;
-		wield_position.X -= 50 * std::sin(std::pow(digfrac, 0.8f) * M_PI);
-		wield_position.Y += 24 * std::sin(digfrac * 1.8 * M_PI);
-		wield_position.Z += 25 * 0.5;
+		v3f target_rotation(80, 30, 100);
 
-		// Euler angles are PURE EVIL, so why not use quaternions?
-		core::quaternion quat_begin(wield_rotation * core::DEGTORAD);
-		core::quaternion quat_end(v3f(80, 30, 100) * core::DEGTORAD);
-		core::quaternion quat_slerp;
-		quat_slerp.slerp(quat_begin, quat_end, std::sin(digfrac * M_PI));
-		quat_slerp.toEuler(wield_rotation);
-		wield_rotation *= core::RADTODEG;
+		if (hand_anim_style == "fast") {
+			// Compressed into the first ~55% of the cycle and with a
+			// noticeably wider arc, then holds at the swung pose for the
+			// remainder -- a snappy, clipped swing rather than a slow
+			// full arc.
+			digfrac = std::min(m_digging_anim * 1.8f, 1.0f);
+			wield_position.X -= 65 * std::sin(std::pow(digfrac, 0.7f) * M_PI);
+			wield_position.Y += 24 * std::sin(digfrac * 1.8 * M_PI);
+			wield_position.Z += 25 * 0.5;
+			core::quaternion quat_begin(wield_rotation * core::DEGTORAD);
+			core::quaternion quat_end(target_rotation * core::DEGTORAD);
+			core::quaternion quat_slerp;
+			quat_slerp.slerp(quat_begin, quat_end, std::sin(digfrac * M_PI));
+			quat_slerp.toEuler(wield_rotation);
+			wield_rotation *= core::RADTODEG;
+		} else if (hand_anim_style == "sway") {
+			// Vanilla arc, plus a wide pendulum sway on top -- extra Z
+			// roll, some X rotation wobble, and a bigger sideways
+			// travel -- for a loose, exaggerated swing that reads
+			// clearly different from the vanilla arc at a glance.
+			wield_position.X -= 50 * std::sin(std::pow(digfrac, 0.8f) * M_PI);
+			wield_position.Y += 24 * std::sin(digfrac * 1.8 * M_PI);
+			wield_position.Z += 25 * 0.5;
+			core::quaternion quat_begin(wield_rotation * core::DEGTORAD);
+			core::quaternion quat_end(target_rotation * core::DEGTORAD);
+			core::quaternion quat_slerp;
+			quat_slerp.slerp(quat_begin, quat_end, std::sin(digfrac * M_PI));
+			quat_slerp.toEuler(wield_rotation);
+			wield_rotation *= core::RADTODEG;
+			wield_rotation.Z += 38.0f * std::sin(digfrac * M_PI);
+			wield_rotation.X += 16.0f * std::sin(digfrac * 2.0f * M_PI);
+			wield_position.X -= 26.0f * std::sin(digfrac * M_PI);
+		} else if (hand_anim_style == "chime") {
+			// Bouncier arc with a fast, clearly audible-feeling
+			// double-bounce layered onto both the vertical motion and
+			// the roll, popularized by "chime"-style swings.
+			wield_position.X -= 50 * std::sin(std::pow(digfrac, 0.8f) * M_PI);
+			wield_position.Y += 24 * std::sin(digfrac * 1.8 * M_PI);
+			wield_position.Y += 15.0f * std::sin(digfrac * M_PI * 5.0f);
+			wield_position.Z += 25 * 0.5;
+			core::quaternion quat_begin(wield_rotation * core::DEGTORAD);
+			core::quaternion quat_end(target_rotation * core::DEGTORAD);
+			core::quaternion quat_slerp;
+			quat_slerp.slerp(quat_begin, quat_end, std::sin(digfrac * M_PI));
+			quat_slerp.toEuler(wield_rotation);
+			wield_rotation *= core::RADTODEG;
+			wield_rotation.Z += 10.0f * std::sin(digfrac * M_PI * 5.0f);
+		} else if (hand_anim_style == "old") {
+			// Genuinely "classic"/blocky swing: a plain triangular
+			// (linear out, linear back) envelope instead of the sine
+			// ease everyone else uses, and a straight per-axis lerp
+			// instead of a slerp -- so it reads as a stiffer, more
+			// mechanical swing rather than a softened version of the
+			// vanilla one.
+			f32 tri = digfrac < 0.5f ? (digfrac * 2.0f) : (2.0f - digfrac * 2.0f);
+			wield_position.X -= 65 * tri;
+			wield_position.Y += 30 * tri;
+			wield_position.Z += 25 * 0.5;
+			wield_rotation = wield_rotation * (1.0f - tri) + target_rotation * tri;
+		} else if (hand_anim_style == "punch") {
+			// An original "hit" style: instead of swinging sideways
+			// like the others, the item thrusts sharply toward the
+			// camera and dips down, with a quick rotational kick, then
+			// eases back out over the remainder of the cycle -- reads
+			// as a single percussive jab rather than a pendulum swing.
+			f32 out_t = std::min(digfrac / 0.4f, 1.0f);
+			f32 back_t = digfrac <= 0.4f ? 0.0f : (digfrac - 0.4f) / 0.6f;
+			f32 outEase = std::sin(out_t * (f32)M_PI * 0.5f);
+			f32 backEase = std::sin(back_t * (f32)M_PI * 0.5f);
+			f32 punch = outEase * (1.0f - backEase);
+
+			wield_position.X -= 30.0f * punch;
+			wield_position.Y -= 18.0f * punch;
+			wield_position.Z += 40.0f * punch + 25 * 0.5f;
+
+			v3f punch_rotation = wield_rotation + v3f(-25, 10, -15);
+			core::quaternion quat_begin(wield_rotation * core::DEGTORAD);
+			core::quaternion quat_end(punch_rotation * core::DEGTORAD);
+			core::quaternion quat_slerp;
+			quat_slerp.slerp(quat_begin, quat_end, punch);
+			quat_slerp.toEuler(wield_rotation);
+			wield_rotation *= core::RADTODEG;
+		} else if (hand_anim_style == "tilt") {
+			// "Tilt": matches lilacbyte/lunarchy's LagOptimizer swing
+			// (https://github.com/lilacbyte/lunarchy, src/client/camera.cpp
+			// -- the "lag_optimizer.no_hand_animation" branch of
+			// Camera::updateViewingRange()/update(), specifically its
+			// "else if (m_digging_button != -1)" case). Unlike every
+			// other style here, the wielded item's position doesn't move
+			// through a swing arc at all -- only its rotation tilts
+			// toward target_rotation and back, eased by the same
+			// sin(digfrac * PI) curve as vanilla's swing.
+			core::quaternion quat_begin2(wield_rotation * core::DEGTORAD);
+			core::quaternion quat_end2(target_rotation * core::DEGTORAD);
+			core::quaternion quat_slerp2;
+			quat_slerp2.slerp(quat_begin2, quat_end2, std::sin(digfrac * M_PI));
+			quat_slerp2.toEuler(wield_rotation);
+			wield_rotation *= core::RADTODEG;
+		} else {
+			// "vanilla" (default) -- untouched original Luanti swing.
+			wield_position.X -= 50 * std::sin(std::pow(digfrac, 0.8f) * M_PI);
+			wield_position.Y += 24 * std::sin(digfrac * 1.8 * M_PI);
+			wield_position.Z += 25 * 0.5;
+			core::quaternion quat_begin(wield_rotation * core::DEGTORAD);
+			core::quaternion quat_end(target_rotation * core::DEGTORAD);
+			core::quaternion quat_slerp;
+			quat_slerp.slerp(quat_begin, quat_end, std::sin(digfrac * M_PI));
+			quat_slerp.toEuler(wield_rotation);
+			wield_rotation *= core::RADTODEG;
+		}
+
+		// Remembered so the "just finished swinging" branch below can
+		// ease back out of exactly this pose, instead of the item just
+		// teleporting back to rest the instant m_digging_anim wraps back
+		// to 0 (which happens after a fixed ~0.29s regardless of the
+		// tool's actual attack speed -- see the "offset = dtime * 3.5f"
+		// in Camera::step() above).
+		m_last_swing_wield_position = wield_position;
+		m_last_swing_wield_rotation = wield_rotation;
+		m_was_swinging = true;
 	} else {
-		f32 bobfrac = my_modf(m_view_bobbing_anim);
-		wield_position.X -= std::sin(bobfrac*M_PI*2.0) * 3.0;
-		wield_position.Y += std::sin(my_modf(bobfrac*2.0)*M_PI) * 3.0;
+		if (!g_settings->getBool("no_view_bob")) {
+			f32 bobfrac = my_modf(m_view_bobbing_anim);
+			wield_position.X -= std::sin(bobfrac*M_PI*2.0) * 3.0;
+			wield_position.Y += std::sin(my_modf(bobfrac*2.0)*M_PI) * 3.0;
+		}
+
+		// This is the first frame the swing animation itself isn't
+		// playing anymore -- note how far into the punch cooldown we
+		// are right now, so the ease-back below knows how much of that
+		// cooldown is left to spread the return motion across.
+		if (m_was_swinging) {
+			m_swing_end_reload_ratio = tool_reload_ratio;
+			m_was_swinging = false;
+		}
+
+		// Ease the weapon back from wherever the swing left it to the
+		// idle/bob pose computed just above, over whatever's left of the
+		// punch cooldown (tool_reload_ratio, same value the reload-dip
+		// above uses) -- rather than the abrupt snap-back this used to
+		// be. "static" never entered the swing branch above in the
+		// first place (nothing moved, nothing to ease back from), so
+		// skip it here too.
+		if (hand_anim_style != "static" && tool_reload_ratio < 1.0f) {
+			f32 denom = std::max(0.001f, 1.0f - m_swing_end_reload_ratio);
+			f32 t = core::clamp(
+				(tool_reload_ratio - m_swing_end_reload_ratio) / denom, 0.0f, 1.0f);
+			wield_position = m_last_swing_wield_position * (1.0f - t) + wield_position * t;
+			wield_rotation = m_last_swing_wield_rotation * (1.0f - t) + wield_rotation * t;
+		}
 	}
+	// "static" never plays a swing/return-ease during attacks or item use
+	// (the hand just sits at its rest pose for those) but still gets the
+	// idle walking bob below like every other style, unless "no_view_bob"
+	// ("NoViewBob" in the HandView panel) is also on -- that one only
+	// ever suppresses *this* idle walking wobble specifically. The
+	// digging/punch/tilt/etc. swing animations above (attack and item
+	// use) are a completely separate branch of this if/else chain and
+	// are untouched by it.
 
 	if (g_settings->getBool("left_hand")) {
 		wield_position.X = -wield_position.X;
@@ -658,8 +730,30 @@ void Camera::update(LocalPlayer* player, f32 frametime, f32 tool_reload_ratio)
 		wield_rotation *= core::RADTODEG;
 	}
 
+	// HandView: an additional, independent offset + scale on top of
+	// everything above -- lets the hand/wielditem be repositioned or
+	// resized without touching the swing animation itself. Off by
+	// default (all zero/1.0), so vanilla feel is unchanged unless the
+	// user actually drags/resizes it (see "HandView" in
+	// src/gui/custom_menu/Menu.cpp -- draggable + scroll-to-resize in
+	// "Move HUD" edit mode, same as the other HUD elements).
+	if (g_settings->getBool("handview_enabled")) {
+		wield_position.X += g_settings->getFloat("handview_offset_x");
+		wield_position.Y += g_settings->getFloat("handview_offset_y");
+		wield_position.Z += g_settings->getFloat("handview_offset_z");
+	}
+
 	m_wieldnode->setPosition(wield_position);
 	m_wieldnode->setRotation(wield_rotation);
+
+	if (g_settings->getBool("handview_enabled")) {
+		f32 handview_scale = rangelim(g_settings->getFloat("handview_scale"), 0.3f, 3.0f);
+		m_wieldnode->setScale(v3f(handview_scale, handview_scale, handview_scale));
+	} else if (m_wieldnode->getScale() != v3f(1.0f, 1.0f, 1.0f)) {
+		// Settings was just turned off -- snap back to normal size
+		// instead of getting stuck at whatever scale was last set.
+		m_wieldnode->setScale(v3f(1.0f, 1.0f, 1.0f));
+	}
 
 	m_player_light_color = player->light_color;
 	m_wieldnode->setNodeLightColor(m_player_light_color);
@@ -764,7 +858,15 @@ void Camera::drawNametags()
 	for (const Nametag *nametag : m_nametags) {
 		// Nametags are hidden in GenericCAO::updateNametag()
 
-		bool is_friend = FriendList::get().isFriend(nametag->text);
+		// Match against the real player name, not `nametag->text`: servers
+		// are free to prefix/style the displayed nametag (rank tags, clan
+		// tags, colors, ...), and matching on that text silently broke
+		// friend highlighting/badges whenever a server did so. Fall back
+		// to the display text only for the rare case owner_name wasn't set
+		// (e.g. non-player entities, which won't match anything anyway).
+		const std::string &match_name =
+			nametag->owner_name.empty() ? nametag->text : nametag->owner_name;
+		bool is_friend = FriendList::get().isFriend(match_name);
 
 		v3f pos = nametag->parent_node->getAbsolutePosition() + nametag->pos * BS;
 		f32 transformed_pos[4] = { pos.X, pos.Y, pos.Z, 1.0f };
@@ -776,7 +878,8 @@ void Camera::drawNametags()
 			std::wstring display_text =
 				translate_string(utf8_to_wide(nametag->text));
 			if (is_friend) {
-				f32 distance = (pos - m_camera_position).getLength() / BS;
+				f32 distance = (pos - (m_camera_position -
+					intToFloat(m_camera_offset, BS))).getLength() / BS;
 				std::wstring suffix =
 					L" [" + std::to_wstring((int)distance) + L"m]";
 				nametag_colorless += suffix;
@@ -847,7 +950,7 @@ void Camera::drawFriendESP()
 		if (!FriendList::get().isFriend(cao->getName()))
 			continue;
 
-		v3f base_pos = cao->getPosition();
+		v3f base_pos = cao->getPosition() - intToFloat(m_camera_offset, BS);
 
 		// Project the corners of the player's selection box to screen
 		// space and highlight it, so friends stand out clearly even
@@ -885,11 +988,88 @@ void Camera::drawFriendESP()
 	}
 }
 
+void Camera::drawMineBoostBadges()
+{
+	// ITextureSource::getTexture() caches internally (and, unlike a raw
+	// pointer we'd cache ourselves here, gets invalidated correctly if
+	// the texture source/driver is ever recreated -- e.g. across a
+	// disconnect/reconnect), so there's no need to hold onto the result
+	// across frames. A previous version of this function did cache it in
+	// a function-local static ITexture*, which went stale exactly like
+	// that and made every draw2DImage() call below fail with Irrlicht's
+	// "Tried to set a texture not owned by this driver" fatal error,
+	// spamming it every single frame from then on.
+	video::ITexture *badge_tex = m_client->getTextureSource()->getTexture("mineboostv2_badge.png");
+	if (!badge_tex)
+		return;
+
+	core::matrix4 trans = m_cameranode->getProjectionMatrix();
+	trans *= m_cameranode->getViewMatrix();
+
+	video::IVideoDriver *driver = RenderingEngine::get_video_driver();
+	v2u32 screensize = driver->getScreenSize();
+	gui::IGUIFont *font = g_fontengine->getFont();
+	const unsigned long long now_ms = porting::getTimeMs();
+
+	std::unordered_map<u16, ClientActiveObject*> objects;
+	m_client->getEnv().getAllActiveObjects(objects);
+
+	for (const auto &pair : objects) {
+		ClientActiveObject *obj = pair.second;
+		GenericCAO *cao = dynamic_cast<GenericCAO*>(obj);
+		if (!cao || !cao->isPlayer() || cao->isLocalPlayer())
+			continue;
+
+		if (!MineBoostPresence::get().isMineBoostUser(cao->getName(), now_ms))
+			continue;
+
+		// Same "top of the player's own selection box" positioning
+		// drawFriendESP() above uses -- deliberately not GenericCAO::
+		// updateNametag()'s m_prop.selectionbox/m_prop.nametag, which a
+		// server (or a mod) can and does blank out to hide the floating
+		// nametag text. Since the badge doesn't depend on nametag text
+		// existing at all, it keeps showing either way. 0.55 * BS instead
+		// of the nametag's own ~0.3 * BS-ish clearance above the head, so
+		// the badge sits with room to spare above wherever the nametag
+		// itself ends up, rather than right at the same height.
+		v3f base_pos = cao->getPosition() - intToFloat(m_camera_offset, BS);
+		aabb3f box(v3f(0.0f, 0.0f, 0.0f), v3f(0.0f, 0.0f, 0.0f));
+		if (!cao->getSelectionBox(&box))
+			continue;
+		v3f pos = base_pos + v3f(0.0f, box.MaxEdge.Y + 0.55f * BS, 0.0f);
+
+		f32 transformed_pos[4] = { pos.X, pos.Y, pos.Z, 1.0f };
+		trans.multiplyWith1x4Matrix(transformed_pos);
+		if (transformed_pos[3] <= 0)
+			continue;
+		f32 zDiv = transformed_pos[3] == 0.0f ? 1.0f : core::reciprocal(transformed_pos[3]);
+		v2s32 screen_pos;
+		screen_pos.X = screensize.X * (0.5f * transformed_pos[0] * zDiv + 0.5f);
+		screen_pos.Y = screensize.Y * (0.5f - transformed_pos[1] * zDiv * 0.5f);
+
+		// A bit bigger than plain font-line-height (was getting lost/
+		// crowding the nametag right below it), plus a small fixed gap
+		// between the badge's bottom edge and the anchor point so it
+		// never touches the nametag even at close range.
+		s32 badge_size = font ? (s32)(font->getDimension(L"A").Height * 1.7f) : 27;
+		s32 gap = std::max(1, badge_size / 10);
+		core::rect<s32> badge_rect(
+			screen_pos.X - badge_size / 2, screen_pos.Y - badge_size - gap,
+			screen_pos.X + badge_size / 2, screen_pos.Y - gap);
+		core::dimension2d<u32> badge_tex_size = badge_tex->getOriginalSize();
+		core::rect<s32> badge_src(0, 0,
+			(s32)badge_tex_size.Width, (s32)badge_tex_size.Height);
+		driver->draw2DImage(badge_tex, badge_rect, badge_src,
+			nullptr, nullptr, true);
+	}
+}
+
 Nametag *Camera::addNametag(scene::ISceneNode *parent_node,
 		const std::string &text, video::SColor textcolor,
-		std::optional<video::SColor> bgcolor, const v3f &pos)
+		std::optional<video::SColor> bgcolor, const v3f &pos,
+		const std::string &owner_name)
 {
-	Nametag *nametag = new Nametag(parent_node, text, textcolor, bgcolor, pos);
+	Nametag *nametag = new Nametag(parent_node, text, textcolor, bgcolor, pos, owner_name);
 	m_nametags.push_back(nametag);
 	return nametag;
 }

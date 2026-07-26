@@ -782,6 +782,29 @@ bool CIrrDeviceSDL::run()
 					MouseButtonStates &= ~irr::EMBSM_MIDDLE;
 				}
 				break;
+
+			// Extra/"side" mouse buttons (X1/X2, aka Mouse4/Mouse5).
+			// Skipped entirely on Android -- see the SDL_BUTTON_X2 hack
+			// above this switch, which remaps it to a right-click there.
+			case SDL_BUTTON_X1:
+				if (SDL_event.type == SDL_MOUSEBUTTONDOWN) {
+					irrevent.MouseInput.Event = irr::EMIE_XBUTTON1_PRESSED_DOWN;
+					MouseButtonStates |= irr::EMBSM_EXTRA1;
+				} else {
+					irrevent.MouseInput.Event = irr::EMIE_XBUTTON1_LEFT_UP;
+					MouseButtonStates &= ~irr::EMBSM_EXTRA1;
+				}
+				break;
+
+			case SDL_BUTTON_X2:
+				if (SDL_event.type == SDL_MOUSEBUTTONDOWN) {
+					irrevent.MouseInput.Event = irr::EMIE_XBUTTON2_PRESSED_DOWN;
+					MouseButtonStates |= irr::EMBSM_EXTRA2;
+				} else {
+					irrevent.MouseInput.Event = irr::EMIE_XBUTTON2_LEFT_UP;
+					MouseButtonStates &= ~irr::EMBSM_EXTRA2;
+				}
+				break;
 			}
 
 			irrevent.MouseInput.ButtonStates = MouseButtonStates;

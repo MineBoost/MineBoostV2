@@ -65,6 +65,13 @@ struct HTTPFetchRequest
 	// Fields of the request
 	StringMap fields;
 
+	// For multipart requests only: optional per-field filename, keyed by
+	// the same key used in "fields". Needed so servers that expect a
+	// real file upload (e.g. an image hosting API) recognize the part as
+	// a file rather than a plain form field. Fields without an entry
+	// here are sent as ordinary (non-file) multipart fields.
+	StringMap multipart_filenames;
+
 	// Raw data of the request overrides fields
 	std::string raw_data;
 

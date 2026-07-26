@@ -25,6 +25,10 @@ public:
 
     void set_setting(std::string setting) { this->setting_item = setting;}
 
+    std::string get_setting_item() const { return this->setting_item; }
+
+    void set_has_advanced_settings(bool flag) { this->has_advanced_settings = flag; }
+
     std::string get_title();
 
     void draw(irr::video::IVideoDriver *driver, s32 screenW, s32 screenH);
@@ -46,6 +50,7 @@ private:
     Setting setting;
 
     bool show_setting = false;
+    bool has_advanced_settings = false;
 };
 
 #endif

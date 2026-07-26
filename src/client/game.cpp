@@ -9,6 +9,8 @@
 #include "client/renderingengine.h"
 #include "camera.h"
 #include "client.h"
+#include "friendlist.h"
+#include "macrolist.h"
 #include "client/clientevent.h"
 #include "client/gameui.h"
 #include "client/game_formspec.h"
@@ -42,6 +44,7 @@
 #include "nodemetadata.h"
 #include "particles.h"
 #include "porting.h"
+#include "util/string.h"
 #include "profiler.h"
 #include "raycast.h"
 #include "server.h"
@@ -507,6 +510,17 @@ public:
 	void run();
 	void shutdown();
 
+	// Called once after a successful connection, before run(). Stores what
+	// the Rich Presence card should say and pushes it to Discord for the
+	// first time; run() then keeps re-checking the relevant settings every
+	// frame (cheaply -- it only actually talks to Discord when something
+	// changed) so toggling "Show nickname in Discord RPC", "Show where you
+	// playing in Discord RPC", or editing the hidden-servers list takes
+	// effect immediately without needing to reconnect.
+	void configureDiscordActivity(const std::string &details,
+			const std::string &playing_text, const std::string &nickname,
+			const std::string &server_key);
+
 protected:
 
 	// Basic initialisation
@@ -540,6 +554,7 @@ protected:
 	void processUserInput(f32 dtime);
 	void processKeyInput();
 	void processItemSelection(u16 *new_playeritem);
+	void processMacroWheel(f32 dtime);
 	bool shouldShowTouchControls();
 
 	void dropSelectedItem(bool single_item = false);
@@ -590,6 +605,7 @@ protected:
 			const core::line3d<f32> &shootline, bool liquids_pointable,
 			const std::optional<Pointabilities> &pointabilities,
 			bool look_for_object, const v3s16 &camera_offset);
+	void updateTargetHighlightParticles(bool is_player_target, u16 object_id);
 	void handlePointingAtNothing(const ItemStack &playerItem);
 	void handlePointingAtNode(const PointedThing &pointed,
 			const ItemStack &selected_item, const ItemStack &hand_item, f32 dtime);
@@ -617,6 +633,13 @@ protected:
 
 	static void settingChangedCallback(const std::string &setting_name, void *data);
 	void readSettings();
+
+	// Fullbright bakes its effect directly into block meshes at build
+	// time (see mapblock_mesh.cpp), rather than applying it per-frame via
+	// a shader uniform, so toggling it needs every already-built chunk to
+	// be re-meshed for the change to actually show up on screen.
+	static void fullbrightChangedCallback(const std::string &setting_name, void *data);
+	void remeshAllBlocks();
 
 	inline bool isKeyDown(GameKeyType k)
 	{
@@ -671,6 +694,23 @@ private:
 
 	void updateChat(f32 dtime);
 
+	// Re-evaluates the Discord RPC settings (nickname visibility, playing-
+	// status visibility, hidden-servers list) against what's currently
+	// being shown, and only talks to Discord if something actually needs
+	// to change. force=true always (re)sends, used for the very first call
+	// and whenever the underlying details (details/playing_text/nickname/
+	// server_key) themselves were just (re)configured.
+	void updateDiscordActivity(bool force);
+
+	std::string m_discord_details;
+	std::string m_discord_playing_text;
+	std::string m_discord_nickname;
+	std::string m_discord_server_key; // "address:port", empty in singleplayer
+	std::string m_discord_last_state_sent;
+	std::string m_discord_last_large_text_sent;
+	bool m_discord_last_hidden = false;
+	bool m_discord_configured = false;
+
 	bool nodePlacement(const ItemDefinition &selected_def, const ItemStack &selected_item,
 		const v3s16 &nodepos, const v3s16 &neighborpos, const PointedThing &pointed,
 		const NodeMetadata *meta);
@@ -719,6 +759,18 @@ private:
 
 	GameRunData runData;
 	Flags m_flags;
+
+	// Local (client-only) particle spawner used for the target highlight effect
+	u64 m_target_particle_spawner_id = 0;
+	u16 m_target_particle_attached_id = 0;
+	bool m_target_particle_active = false;
+
+	// The player we hit first; stays "locked" as our marked target until they
+	// die/disconnect/leave range, regardless of who else we hit afterwards.
+	u16 m_locked_target_id = 0;
+	// Seconds since m_locked_target_id was last hit; the lock is dropped
+	// after LOCKED_TARGET_TIMEOUT_S seconds without a hit on it.
+	float m_locked_target_timer = 0.0f;
 
 	/* 'cache'
 	   This class does take ownership/responsibily for cleaning up etc of any of
@@ -834,6 +886,8 @@ Game::Game() :
 		&settingChangedCallback, this);
 	g_settings->registerChangedCallback("pause_on_lost_focus",
 		&settingChangedCallback, this);
+	g_settings->registerChangedCallback("fullbright",
+		&fullbrightChangedCallback, this);
 
 	readSettings();
 }
@@ -930,6 +984,61 @@ bool Game::startup(bool *kill,
 }
 
 
+void Game::configureDiscordActivity(const std::string &details,
+		const std::string &playing_text, const std::string &nickname,
+		const std::string &server_key)
+{
+	m_discord_details = details;
+	m_discord_playing_text = playing_text;
+	m_discord_nickname = nickname;
+	m_discord_server_key = server_key;
+	m_discord_last_state_sent.clear();
+	m_discord_last_large_text_sent.clear();
+	m_discord_last_hidden = false;
+	m_discord_configured = true;
+	updateDiscordActivity(true);
+}
+
+void Game::updateDiscordActivity(bool force)
+{
+	bool hidden = false;
+	if (!m_discord_server_key.empty()) {
+		std::string list = g_settings->get("discord_rpc_hidden_servers");
+		if (!list.empty()) {
+			for (const std::string &raw_entry : str_split(list, ',')) {
+				std::string entry(trim(raw_entry));
+				if (!entry.empty() && entry == m_discord_server_key) {
+					hidden = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (hidden) {
+		if (force || !m_discord_last_hidden)
+			DiscordRPC::get().clearActivity();
+		m_discord_last_hidden = true;
+		return;
+	}
+
+	std::string state_text = g_settings->getBool("discord_rpc_show_playing") ?
+			m_discord_playing_text : "";
+	std::string large_text = g_settings->getBool("discord_rpc_show_nickname") ?
+			m_discord_nickname : "MineBoostV2";
+
+	if (force || m_discord_last_hidden ||
+			state_text != m_discord_last_state_sent ||
+			large_text != m_discord_last_large_text_sent) {
+		DiscordRPC::get().setActivity(m_discord_details, state_text,
+				"mineboostv2_logo", large_text, "", "", force);
+		m_discord_last_state_sent = state_text;
+		m_discord_last_large_text_sent = large_text;
+	}
+
+	m_discord_last_hidden = false;
+}
+
 void Game::run()
 {
 	ZoneScoped;
@@ -1000,6 +1109,8 @@ void Game::run()
 			break;
 
 		DiscordRPC::get().poll();
+		if (m_discord_configured)
+			updateDiscordActivity(false);
 
 		processQueues();
 
@@ -1057,7 +1168,7 @@ void Game::shutdown()
 	gui_chat_console.reset();
 
 	sky.reset();
-
+	
 	/* cleanup menus */
 	while (g_menumgr.menuCount() > 0) {
 		g_menumgr.deleteFront();
@@ -1841,6 +1952,7 @@ void Game::processUserInput(f32 dtime)
 		runData.jump_timer_down += dtime;
 
 	processKeyInput();
+	processMacroWheel(dtime);
 	processItemSelection(&runData.new_playeritem);
 }
 
@@ -1974,11 +2086,60 @@ void Game::processKeyInput()
 	}
 }
 
+// Macro Wheel: hold the wheel key (default Tab, "keymap_macro_wheel") to
+// pop up a ring of saved commands (see MacroList / ".macro add <command>"
+// in chat), scroll to move the selection, release to run whichever one
+// is highlighted -- exactly as if it had been typed in chat. Rendering
+// itself lives in Hud::drawMacroWheel(); this only owns the open/select/
+// run logic and the two Hud fields that drive that rendering.
+void Game::processMacroWheel(f32 dtime)
+{
+	const auto &macros = MacroList::get().getAll();
+
+	if (isKeyDown(KeyType::MACRO_WHEEL) && !macros.empty()) {
+		if (!hud->macro_wheel_open) {
+			hud->macro_wheel_open = true;
+			hud->macro_wheel_selected = 0;
+		}
+
+		// Claim the scroll wheel for macro selection while open (see the
+		// early-out this adds in processItemSelection() so it doesn't
+		// also spin the hotbar). One notch = one step around the wheel.
+		s32 wheel = input->getMouseWheel();
+		if (wheel != 0) {
+			int count = (int)macros.size();
+			hud->macro_wheel_selected =
+				((hud->macro_wheel_selected - (wheel > 0 ? 1 : -1)) % count + count) % count;
+		}
+		return;
+	}
+
+	if (!hud->macro_wheel_open)
+		return;
+
+	// Key was released (or the list emptied out from under us via
+	// ".macro clear" while held) -- run the selection, if any, then
+	// close the wheel either way.
+	hud->macro_wheel_open = false;
+	if (!macros.empty()) {
+		int idx = ((hud->macro_wheel_selected % (int)macros.size()) + (int)macros.size())
+			% (int)macros.size();
+		client->typeChatMessage(utf8_to_wide(macros[idx]));
+	}
+}
+
 void Game::processItemSelection(u16 *new_playeritem)
 {
 	LocalPlayer *player = client->getEnv().getLocalPlayer();
 
 	*new_playeritem = player->getWieldIndex();
+
+	// The Macro Wheel (processMacroWheel(), called just before this)
+	// already claimed this frame's scroll wheel input for picking a
+	// macro -- don't also spin the hotbar selection with it.
+	if (hud->macro_wheel_open)
+		return;
+
 	u16 max_item = player->getMaxHotbarItemcount();
 	if (max_item == 0)
 		return;
@@ -3046,6 +3207,23 @@ void Game::processPlayerInteraction(f32 dtime, bool show_hud)
 {
 	LocalPlayer *player = client->getEnv().getLocalPlayer();
 
+	// Drop the locked TargetESP target if we died, or if we haven't hit
+	// it in a while -- otherwise it can stay "stuck" on whoever we fought
+	// last, including after respawning.
+	if (m_locked_target_id != 0) {
+		if (player->hp == 0) {
+			m_locked_target_id = 0;
+			m_locked_target_timer = 0.0f;
+		} else {
+			m_locked_target_timer += dtime;
+			static const float LOCKED_TARGET_TIMEOUT_S = 10.0f;
+			if (m_locked_target_timer > LOCKED_TARGET_TIMEOUT_S) {
+				m_locked_target_id = 0;
+				m_locked_target_timer = 0.0f;
+			}
+		}
+	}
+
 	const v3f camera_direction = camera->getDirection();
 	const v3s16 camera_offset  = camera->getOffset();
 
@@ -3202,6 +3380,83 @@ void Game::processPlayerInteraction(f32 dtime, bool show_hud)
 }
 
 
+namespace {
+	std::string toHexColor(u32 r, u32 g, u32 b)
+	{
+		static const char *hex = "0123456789abcdef";
+		std::string s = "#";
+		u32 vals[3] = {r, g, b};
+		for (u32 v : vals) {
+			s += hex[(v >> 4) & 0xF];
+			s += hex[v & 0xF];
+		}
+		return s;
+	}
+
+	// Reserved id for the local (client-only) target-highlight particle spawner.
+	// Note: the delete-spawner client event only carries a u32 id, so this must
+	// fit within 32 bits. Chosen from the high end of the range to minimize the
+	// (still nonzero) chance of colliding with a server-assigned spawner id.
+	const u64 TARGET_HIGHLIGHT_PARTICLE_SPAWNER_ID = 0xFFFF0001UL;
+}
+
+void Game::updateTargetHighlightParticles(bool is_player_target, u16 object_id)
+{
+	bool want_particles = is_player_target &&
+		g_settings->getBool("target_highlight_particles");
+
+	if (m_target_particle_active &&
+			(!want_particles || m_target_particle_attached_id != object_id)) {
+		auto *event = new ClientEvent();
+		event->type = CE_DELETE_PARTICLESPAWNER;
+		event->delete_particlespawner.id = (u32)m_target_particle_spawner_id;
+		client->pushToEventQueue(event);
+		m_target_particle_active = false;
+	}
+
+	if (want_particles && !m_target_particle_active) {
+		v3f colorf = g_settings->getV3F("target_highlight_color").value_or(v3f(60, 220, 255));
+		u32 r = rangelim(myround(colorf.X), 0, 255);
+		u32 g = rangelim(myround(colorf.Y), 0, 255);
+		u32 b = rangelim(myround(colorf.Z), 0, 255);
+
+		ParticleSpawnerParameters p;
+		p.amount = rangelim(g_settings->getS32("target_highlight_particle_amount"), 1, 200);
+		p.time = 0; // infinite duration, spawns continuously
+		p.pos = ParticleParamTypes::v3fRangeTween(
+			ParticleParamTypes::v3fRange(v3f(0.0f, 1.0f, 0.0f)));
+		p.radius = ParticleParamTypes::v3fRangeTween(
+			ParticleParamTypes::v3fRange(v3f(0.9f, 0.9f, 0.9f)));
+		p.vel = ParticleParamTypes::v3fRangeTween(
+			ParticleParamTypes::v3fRange(v3f(-0.8f, -0.8f, -0.8f), v3f(0.8f, 0.8f, 0.8f)));
+		p.exptime = ParticleParamTypes::f32RangeTween(
+			ParticleParamTypes::f32Range(0.5f, 1.0f));
+		p.size = ParticleParamTypes::f32RangeTween(
+			ParticleParamTypes::f32Range(2.0f, 2.0f));
+		p.glow = 255;
+
+		p.attractor_kind = ParticleParamTypes::AttractorKind::point;
+		p.attract = ParticleParamTypes::f32RangeTween(
+			ParticleParamTypes::f32Range(2.0f, 4.0f));
+		p.attractor_origin = ParticleParamTypes::v3fTween(v3f(0.0f, 1.0f, 0.0f));
+		p.attractor_attachment = object_id;
+		p.attractor_kill = false;
+
+		p.texture.string = "[fill:8x8:" + toHexColor(r, g, b);
+
+		auto *event = new ClientEvent();
+		event->type = CE_ADD_PARTICLESPAWNER;
+		event->add_particlespawner.p = new ParticleSpawnerParameters(p);
+		event->add_particlespawner.attached_id = object_id;
+		event->add_particlespawner.id = TARGET_HIGHLIGHT_PARTICLE_SPAWNER_ID;
+		client->pushToEventQueue(event);
+
+		m_target_particle_spawner_id = TARGET_HIGHLIGHT_PARTICLE_SPAWNER_ID;
+		m_target_particle_attached_id = object_id;
+		m_target_particle_active = true;
+	}
+}
+
 PointedThing Game::updatePointedThing(
 	const core::line3d<f32> &shootline,
 	bool liquids_pointable,
@@ -3225,22 +3480,46 @@ PointedThing Game::updatePointedThing(
 	RaycastState s(shootline, look_for_object, liquids_pointable, pointabilities);
 	PointedThing result;
 	env.continueRaycast(&s, &result);
+	hud->target_is_player = false;
+	hud->target_hud_active = false;
+	u16 final_target_id = 0;
 	if (result.type == POINTEDTHING_OBJECT) {
 		hud->pointing_at_object = true;
 
 		runData.selected_object = client->getEnv().getActiveObject(result.object_id);
+		GenericCAO* gcao = dynamic_cast<GenericCAO*>(runData.selected_object);
+		bool is_player_target = gcao != nullptr && gcao->isPlayer();
+
 		aabb3f selection_box{{0.0f, 0.0f, 0.0f}};
 		if (show_entity_selectionbox && runData.selected_object->doShowSelectionBox() &&
 				runData.selected_object->getSelectionBox(&selection_box)) {
 			v3f pos = runData.selected_object->getPosition();
 			selectionboxes->push_back(selection_box);
 			hud->setSelectionPos(pos, camera_offset);
-			GenericCAO* gcao = dynamic_cast<GenericCAO*>(runData.selected_object);
 			if (gcao != nullptr && gcao->getProperties().rotate_selectionbox)
 				hud->setSelectionRotation(gcao->getSceneNode()->getAbsoluteTransformation().getRotationDegrees());
 			else
 				hud->setSelectionRotation(v3f());
 		}
+
+		if (is_player_target) {
+			hud->target_is_player = true;
+
+			// TargetHUD shows for anyone you're aiming at, friend or not
+			// -- it's just HP info. TargetESP particles, however, should
+			// never aggro onto a friend.
+			if (!FriendList::get().isFriend(gcao->getName()))
+				final_target_id = result.object_id;
+
+			hud->target_hud_active = true;
+			hud->target_hud_name = gcao->getName();
+			hud->target_hud_skin = !gcao->getProperties().textures.empty() ?
+				gcao->getProperties().textures[0] : "";
+			hud->target_hud_hp = gcao->getHp();
+			u16 hp_max = gcao->getProperties().hp_max;
+			hud->target_hud_hp_max = hp_max > 0 ? hp_max : 20;
+		}
+
 		hud->setSelectedFaceNormal(result.raw_intersection_normal);
 	} else if (result.type == POINTEDTHING_NODE) {
 		// Update selection boxes
@@ -3262,6 +3541,41 @@ PointedThing Game::updatePointedThing(
 		hud->setSelectionRotation(v3f());
 		hud->setSelectedFaceNormal(result.intersection_normal);
 	}
+
+	// If we have a locked (first-hit) target that the crosshair isn't already
+	// pointing at, keep tracking it for particles as long as it's actually
+	// visible on screen: inside the camera's view AND with a clear line of
+	// sight (no solid blocks in between). This never reveals a target you
+	// couldn't already see, and never activates TargetHUD -- TargetHUD only
+	// shows while directly aiming at a player.
+	if (!hud->target_is_player && m_locked_target_id != 0) {
+		ClientActiveObject *locked_obj = env.getActiveObject(m_locked_target_id);
+		GenericCAO *locked_gcao = dynamic_cast<GenericCAO*>(locked_obj);
+		if (!locked_gcao || !locked_gcao->isPlayer()) {
+			// Target died, disconnected, or moved out of range.
+			m_locked_target_id = 0;
+			m_locked_target_timer = 0.0f;
+		} else if (g_settings->getBool("target_highlight_particles")) {
+			v3f target_pos = locked_gcao->getPosition();
+
+			auto is_frustum_culled = camera->getFrustumCuller();
+			if (!is_frustum_culled(target_pos, BS)) {
+				core::line3d<f32> los_line(camera->getPosition(), target_pos);
+				RaycastState los(los_line, false, true, std::nullopt);
+				PointedThing los_result;
+				env.continueRaycast(&los, &los_result);
+
+				// A node hit before reaching the target means something
+				// solid is blocking the view.
+				if (los_result.type != POINTEDTHING_NODE) {
+					hud->target_is_player = true;
+					final_target_id = m_locked_target_id;
+				}
+			}
+		}
+	}
+
+	updateTargetHighlightParticles(hud->target_is_player, final_target_id);
 
 	// Update selection mesh light level and vertex colors
 	if (!selectionboxes->empty()) {
@@ -3618,9 +3932,31 @@ void Game::handlePointingAtObject(const PointedThing &pointed,
 		if (do_punch) {
 			infostream << "Punched object" << std::endl;
 			runData.punching = true;
+
+			GenericCAO *gcao = dynamic_cast<GenericCAO*>(runData.selected_object);
+			if (gcao != nullptr && gcao->isPlayer() &&
+					!FriendList::get().isFriend(gcao->getName())) {
+				if (m_locked_target_id == 0) {
+					m_locked_target_id = pointed.object_id;
+					m_locked_target_timer = 0.0f;
+				} else if (m_locked_target_id == pointed.object_id) {
+					m_locked_target_timer = 0.0f; // still fighting the same target
+				}
+			}
 		}
 
-		if (do_punch_damage) {
+		// NoFriendDamage ("no_friend_damage"): if the punched object is a
+		// player on the .friend list, silently skip the actual damage --
+		// same friend check used above for the aim-lock and for TargetESP
+		// in updateFrame() (see FriendList::isFriend() calls). Only the
+		// damage packet is suppressed; runData.punching/the swing animation
+		// above still plays so it doesn't look broken locally.
+		GenericCAO *punched_gcao = dynamic_cast<GenericCAO*>(runData.selected_object);
+		bool punch_is_protected_friend = g_settings->getBool("no_friend_damage") &&
+			punched_gcao != nullptr && punched_gcao->isPlayer() &&
+			FriendList::get().isFriend(punched_gcao->getName());
+
+		if (do_punch_damage && !punch_is_protected_friend) {
 			// Report direct punch
 			v3f objpos = runData.selected_object->getPosition();
 			v3f dir = (objpos - player_position).normalize();
@@ -4105,6 +4441,22 @@ void Game::settingChangedCallback(const std::string &setting_name, void *data)
 	((Game *)data)->readSettings();
 }
 
+void Game::fullbrightChangedCallback(const std::string &setting_name, void *data)
+{
+	((Game *)data)->remeshAllBlocks();
+}
+
+void Game::remeshAllBlocks()
+{
+	if (!client)
+		return;
+
+	std::vector<v3s16> positions;
+	client->getEnv().getClientMap().getAllLoadedBlockPositions(positions);
+	for (const v3s16 &p : positions)
+		client->addUpdateMeshTask(p, false, false);
+}
+
 void Game::readSettings()
 {
 	LogLevel chat_log_level = Logger::stringToLevel(g_settings->get("chat_log_level"));
@@ -4169,18 +4521,24 @@ void the_game(bool *kill,
 
 		if (game.startup(kill, input, rendering_engine, start_data,
 				error_message, reconnect_requested, &chat_backend)) {
+			// The nickname (shown as a tooltip when hovering the
+			// MineBoostV2 image) and the playing-status line are each
+			// gated behind their own setting, and the whole card can be
+			// hidden per-server -- see updateDiscordActivity().
 			if (start_data.isSinglePlayer()) {
 				std::string world_display = start_data.world_spec.name.empty() ?
 					"Unnamed world" : start_data.world_spec.name;
-				DiscordRPC::get().setActivity(
+				game.configureDiscordActivity(
 					"Playing singleplayer", "World: " + world_display,
-					"mineboostv2_logo", "MineBoostV2", "", "", true);
+					start_data.name, "");
 			} else {
 				std::string server_display = start_data.server_name.empty() ?
 					start_data.address : start_data.server_name;
-				DiscordRPC::get().setActivity(
+				std::string server_key = start_data.address + ":" +
+					std::to_string(start_data.socket_port);
+				game.configureDiscordActivity(
 					"In multiplayer", "Server: " + server_display,
-					"mineboostv2_logo", "MineBoostV2", "", "", true);
+					start_data.name, server_key);
 			}
 			game.run();
 		}

@@ -27,6 +27,13 @@ public:
 	// You should call isOpenInhibited() before this.
 	void openConsole(f32 scale);
 
+	// Sets m_background_color to the fixed HUD-style panel color used by
+	// drawBackground() (see src/client/hud.cpp's other HUD panels for the
+	// matching look) -- called once from the constructor. Kept as its own
+	// method, rather than inlined there, in case a background_chat.jpg
+	// texture override is in use (see the body).
+	void updateBackgroundColor();
+
 	bool isOpen() const;
 
 	// Check if the console should not be opened at the moment

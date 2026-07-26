@@ -591,6 +591,11 @@ private:
 
 	std::unique_ptr<ModChannelMgr> m_modchannel_mgr;
 
+	// MineBoostV2 presence heartbeat (see mineboost_presence.h). Starts
+	// high so the first join+broadcast happens on the first step() call
+	// after the player is ready, rather than waiting a full interval.
+	float m_mineboost_presence_timer = 1000.0f;
+
 	// The number of blocks the client will combine for mesh generation.
 	MeshGrid m_mesh_grid;
 };

@@ -24,6 +24,10 @@ void Draw3D::run(PipelineContext &context)
 		return;
 	context.hud->drawBlockBounds();
 	context.hud->drawSelectionMesh();
+	context.hud->drawTargetHud();
+	context.hud->drawInventoryHud();
+	context.hud->drawCraftHud();
+	// context.hud->drawArmorHud(); // ArmorHUD temporarily disabled
 }
 
 void DrawWield::run(PipelineContext &context)
@@ -47,11 +51,13 @@ void DrawHUD::run(PipelineContext &context)
 			context.hud->drawCrosshair();
 
 		context.hud->drawLuaElements(context.client->getCamera()->getOffset());
+		context.hud->drawMusicHud();
+		context.hud->drawPhotoHud();
+		context.hud->drawDebugTextBackgrounds();
+		context.hud->drawMacroWheel();
 		context.client->getCamera()->drawNametags();
 		context.client->getCamera()->drawFriendESP();
-		if (g_settings->getBool("enable_hp_bar")) {
-			context.client->getCamera()->drawHealthBar();
-		}
+		context.client->getCamera()->drawMineBoostBadges();
 	}
 	context.device->getGUIEnvironment()->drawAll();
 }

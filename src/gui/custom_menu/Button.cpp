@@ -1,4 +1,5 @@
 #include "Button.h"
+#include "gui/custom_menu/ModernUI.h"
 
 void Button::addButton(core::rect<s32> position, std::wstring title)
 {
@@ -21,9 +22,15 @@ void Button::draw(video::IVideoDriver *driver)
     gui::IGUIFont* font = g_fontengine->getFont(FONT_SIZE_UNSPECIFIED, FM_Standard);
 
     if (IsVisible() && font) {
-        driver->draw2DRectangle(color, position);
+        video::SColor fill = is_active ?
+            video::SColor(230, 34, 40, 58) : color;
+        video::SColor border = is_active ?
+            ModernUI::PanelBorder : ModernUI::PanelBorderDim;
+        s32 thickness = is_active ? 2 : 1;
 
-        driver->draw2DRectangleOutline(position, video::SColor(255, 255, 0, 0), 2);
+        ModernUI::panel(driver, position, ModernUI::RadiusSmall, fill, border,
+            /*shadow=*/false, thickness);
+
         core::dimension2du textSize = font->getDimension(title.c_str());
         s32 textX = position.UpperLeftCorner.X + (position.getWidth() - textSize.Width) / 2;
         s32 textY = position.UpperLeftCorner.Y + (position.getHeight() - textSize.Height) / 2;
@@ -47,9 +54,12 @@ bool Button::isPressed(const irr::SEvent &event)
         }
     }
 
-    if (event.MouseInput.Event == irr::EMIE_LMOUSE_LEFT_UP) {
+    if (event.EventType == irr::EET_MOUSE_INPUT_EVENT &&
+            event.MouseInput.Event == irr::EMIE_LMOUSE_LEFT_UP) {
         setColor(video::SColor(105, 0, 0, 0));
-        return true;
+        if (position.isPointInside(core::vector2d<s32>(event.MouseInput.X, event.MouseInput.Y)))
+            return true;
+        return false;
     }
 
     return false;

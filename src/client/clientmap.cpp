@@ -250,6 +250,17 @@ void ClientMap::render()
 	renderMap(driver, SceneManager->getSceneNodeRenderPass());
 }
 
+void ClientMap::getAllLoadedBlockPositions(std::vector<v3s16> &positions) const
+{
+	for (const auto &sector_it : m_sectors) {
+		MapSector *sector = sector_it.second;
+		MapBlockVect blocks;
+		sector->getBlocks(blocks);
+		for (MapBlock *block : blocks)
+			positions.push_back(block->getPos());
+	}
+}
+
 void ClientMap::getBlocksInViewRange(v3s16 cam_pos_nodes,
 		v3s16 *p_blocks_min, v3s16 *p_blocks_max, float range)
 {

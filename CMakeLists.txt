@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.12)
 
+# Prevents Ninja from automatically re-invoking CMake before every build.
+# On MSYS2/Windows, filesystem timestamp mismatches between the native NTFS
+# path and MSYS2 make Ninja think CMakeLists.txt is always newer than
+# build.ninja, causing it to reconfigure on every single build. With this
+# suppressed, just re-run cmake manually whenever you actually edit a
+# CMakeLists.txt or .cmake file.
+set(CMAKE_SUPPRESS_REGENERATION ON)
+
 # This can be read from ${PROJECT_NAME} after project() is called
 project(luanti)
 set(PROJECT_NAME_CAPITALIZED "MineBoostV2")

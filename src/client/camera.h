@@ -28,17 +28,24 @@ struct Nametag
 	video::SColor textcolor;
 	std::optional<video::SColor> bgcolor;
 	v3f pos;
+	// The real player/object name backing this nametag, used to match
+	// against the friend list and MineBoost presence -- as opposed to
+	// `text`, which servers are free to customize (rank prefixes, clan
+	// tags, colors, etc.) and therefore can't be relied on for matching.
+	std::string owner_name;
 
 	Nametag(scene::ISceneNode *a_parent_node,
 			const std::string &text,
 			const video::SColor &textcolor,
 			const std::optional<video::SColor> &bgcolor,
-			const v3f &pos):
+			const v3f &pos,
+			const std::string &owner_name = ""):
 		parent_node(a_parent_node),
 		text(text),
 		textcolor(textcolor),
 		bgcolor(bgcolor),
-		pos(pos)
+		pos(pos),
+		owner_name(owner_name)
 	{
 	}
 
@@ -186,7 +193,8 @@ public:
 
 	Nametag *addNametag(scene::ISceneNode *parent_node,
 		const std::string &text, video::SColor textcolor,
-		std::optional<video::SColor> bgcolor, const v3f &pos);
+		std::optional<video::SColor> bgcolor, const v3f &pos,
+		const std::string &owner_name = "");
 
 	void removeNametag(Nametag *nametag);
 
@@ -198,9 +206,20 @@ public:
 	// explicitly added as a friend via the ".friend add" chat command.
 	void drawFriendESP();
 
+	// MineBoostV2 badge for other players also running it (see
+	// mineboost_presence.h). Deliberately independent of Nametag/
+	// m_nametags -- those get deleted outright by GenericCAO::
+	// updateNametag() whenever a server sets an empty nametag (a common
+	// server-side/mod technique for hiding floating nametags), which used
+	// to take the badge down with it since it was drawn as part of the
+	// same per-nametag loop in drawNametags() above. This positions
+	// itself straight off each player's own scene node/selection box
+	// instead, the same way drawFriendESP() does, so it shows up
+	// regardless of whatever a nametag-hiding mod does.
+	void drawMineBoostBadges();
+
 	inline void addArmInertia(f32 player_yaw);
 
-	void drawHealthBar();
 
 private:
 	// Use getFrustumCuller().
@@ -268,6 +287,16 @@ private:
 	// If 0, left-click digging animation
 	// If 1, right-click digging animation
 	s32 m_digging_button = -1;
+
+	// Return-to-rest ease after a swing (see the wielded-item block in
+	// Camera::update(), src/client/camera.cpp): the pose the swing
+	// animation left off at, the punch-cooldown ratio at the moment it
+	// did, and whether the swing was still playing last frame (so that
+	// moment can be detected).
+	v3f m_last_swing_wield_position;
+	v3f m_last_swing_wield_rotation;
+	f32 m_swing_end_reload_ratio = 1.0f;
+	bool m_was_swinging = false;
 
 	// Animation when changing wielded item
 	f32 m_wield_change_timer = 0.125f;

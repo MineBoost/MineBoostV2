@@ -21,6 +21,8 @@ public:
 
     void addButton(core::rect<s32> position, std::wstring title);
 
+    inline core::rect<s32> get_rect() const { return position; }
+
     void draw(video::IVideoDriver *driver);
 
     inline bool IsVisible() { return is_visible; }
@@ -38,10 +40,17 @@ public:
         onClickCallback = callback;
     }
 
+    // Used for category tab buttons (GUI/Render/Movement/Scrollbars) so the
+    // currently-selected tab can be highlighted -- see
+    // Menu::updateCategoryButtonActiveStates() in Menu.cpp.
+    inline void setActive(bool flag) { this->is_active = flag; }
+    inline bool isActive() const { return is_active; }
+
 private:
     core::rect<s32> position;
     std::wstring title;
     bool is_visible = false;
+    bool is_active = false;
 
     video::SColor color = video::SColor(255, 0, 0, 0);
     video::SColor font_color = video::SColor(255, 255, 255, 255);

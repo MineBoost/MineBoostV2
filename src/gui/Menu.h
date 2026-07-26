@@ -76,12 +76,12 @@ public:
 
     void updateScrollBarPosition(gui::IGUIScrollBar* scrollbar, int screenW, int screenH);
     void updateFpsScrollBarPosition(gui::IGUIScrollBar* scrollbar, int screenW, int screenH);
-
+    
     std::vector<Setting> getSettings() {
         std::vector<Setting> settings;
 
         settings.push_back({"KeyStroker", "show_keys", SettingCategory::GUI});
-        settings.push_back({"Show coords", "show_coords", SettingCategory::GUI});
+        settings.push_back({"ShowCoords", "show_coords", SettingCategory::GUI});
         settings.push_back({"Discord RPC", "discord_rpc_enabled", SettingCategory::GUI});
 
         settings.push_back({"Fullbright", "fullbright", SettingCategory::RENDER});
@@ -94,7 +94,6 @@ public:
         settings.push_back({"Particles", "particles", SettingCategory::RENDER});
 
         settings.push_back({"Fast place", "fast_place", SettingCategory::MISC, {Types::Boolean, 43, 124, "data"}});
-        //settings.push_back({"Players HP", "enable_hp_bar", SettingCategory::RENDER});
         return settings;
     }
 

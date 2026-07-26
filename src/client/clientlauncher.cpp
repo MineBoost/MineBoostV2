@@ -15,6 +15,7 @@
 #include "inputhandler.h"
 #include "profiler.h"
 #include "gui/guiEngine.h"
+#include "gui/custom_menu/Menu.h"
 #include "fontengine.h"
 #include "clientlauncher.h"
 #include "discordrpc.h"
@@ -574,7 +575,26 @@ void ClientLauncher::main_menu(MainMenuData *menudata)
 	}
 
 	/* show main menu */
+	// MineBoostV2 settings menu (Colors, HandView, keybinds, ...),
+	// reachable from the title screen too via "keymap_menu" -- see
+	// Menu::checkMainMenuOpenKeybind() in src/gui/custom_menu/Menu.cpp
+	// for how it gets toggled without a Game/Client around yet. Sibling
+	// of GUIEngine on the same guiroot rather than owned by it, so it
+	// keeps working across GUIEngine's own internal menu-switching
+	// (server list, settings tabs, etc.) exactly like it does in-game
+	// across formspecs/the pause menu. Closed and removed (not left for
+	// GUIEngine's own teardown to find) before this function returns, so
+	// a later trip back to the title screen after disconnecting starts
+	// with a fresh instance on the also-freshly-recreated guiroot,
+	// rather than something still attached to what's about to become a
+	// dangling parent.
+	Menu *mainmenu_client_menu = new Menu(
+		m_rendering_engine->get_gui_env(), guiroot, -1, &g_menumgr, nullptr);
+
 	GUIEngine mymenu(&input->joystick, guiroot, m_rendering_engine, &g_menumgr, menudata, *kill);
+
+	mainmenu_client_menu->close();
+	mainmenu_client_menu->remove();
 
 	/* leave scene manager in a clean state */
 	m_rendering_engine->get_scene_manager()->clear();

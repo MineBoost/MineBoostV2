@@ -79,6 +79,12 @@ public:
 
 	void getBlocksInViewRange(v3s16 cam_pos_nodes,
 		v3s16 *p_blocks_min, v3s16 *p_blocks_max, float range=-1.0f);
+	// Returns the positions of every MapBlock currently loaded on the
+	// client, regardless of whether it's in view range. Used to force a
+	// full remesh of all chunks when a client-side setting that affects
+	// mesh generation (e.g. fullbright) is toggled, since lighting is
+	// baked into the mesh at build time rather than applied per-frame.
+	void getAllLoadedBlockPositions(std::vector<v3s16> &positions) const;
 	void updateDrawList();
 	// @brief Calculate statistics about the map and keep the blocks alive
 	void touchMapBlocks();

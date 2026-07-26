@@ -86,6 +86,8 @@ void GameUI::init()
 		false, true, guiroot);
 	m_guitext_showfps = gui::StaticText::add(guienv, L"", core::rect<s32>(0, 0, 0, 0),
 	false, true, guiroot);
+	m_guitext_showping = gui::StaticText::add(guienv, L"", core::rect<s32>(0, 0, 0, 0),
+	false, true, guiroot);
 	// Infotext of nodes and objects.
 	// If in debug mode, object debug infos shown here, too.
 	// Located on the left on the screen, below chat.
@@ -121,20 +123,65 @@ void GameUI::update(const RunStats &stats, Client *client, MapDrawControl *draw_
 
 	s32 minimal_debug_height = 0;
 
-	if (g_settings->getBool("show_coords")){
-		std::ostringstream os(std::ios_base::binary);
-		os << std::setprecision(1) << std::fixed
-			<< "(" << "X: "<< (player_position.X / BS)
-			<< ", Y: " << (player_position.Y / BS)
-			<< ", Z: " << (player_position.Z / BS) << ")";
+	// Advance throttle timers once per call (dtime is real elapsed time,
+	// so this interval is frame-rate independent: weak devices at 20 FPS
+	// and strong devices at 500 FPS both refresh these labels ~5x/sec).
+	m_coords_text_timer += dtime;
+	m_fps_text_timer += dtime;
+	m_ping_text_timer += dtime;
+	bool update_coords_text = m_coords_text_timer >= HUD_TEXT_UPDATE_INTERVAL;
+	bool update_fps_text = m_fps_text_timer >= HUD_TEXT_UPDATE_INTERVAL;
+	bool update_ping_text = m_ping_text_timer >= HUD_TEXT_UPDATE_INTERVAL;
+	if (update_coords_text)
+		m_coords_text_timer = 0.0f;
+	if (update_fps_text)
+		m_fps_text_timer = 0.0f;
+	if (update_ping_text)
+		m_ping_text_timer = 0.0f;
 
+	// Global size multiplier for MineBoost's custom HUD elements -- see
+	// "hud_size" in src/gui/custom_menu/Menu.cpp ("HUD Size" slider) --
+	// each combined with its own independent per-element multiplier
+	// (scroll over the element while in "Move HUD" edit mode to resize
+	// just that one). Only rebuild a font when its own combined value
+	// actually changes.
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f);
+	float coords_size = hud_size * rangelim(g_settings->getFloat("coords_size"), 0.5f, 2.5f);
+	float fps_size = hud_size * rangelim(g_settings->getFloat("fps_size"), 0.5f, 2.5f);
+	float ping_size = hud_size * rangelim(g_settings->getFloat("ping_size"), 0.5f, 2.5f);
+	if (coords_size != m_last_coords_size) {
+		m_last_coords_size = coords_size;
+		m_guitext_coords->setOverrideFont(g_fontengine->getFont(
+			(unsigned int)(g_fontengine->getDefaultFontSize() * coords_size), FM_Unspecified));
+	}
+	if (fps_size != m_last_fps_size) {
+		m_last_fps_size = fps_size;
+		m_guitext_showfps->setOverrideFont(g_fontengine->getFont(
+			(unsigned int)(g_fontengine->getDefaultFontSize() * fps_size), FM_Unspecified));
+	}
+	if (ping_size != m_last_ping_size) {
+		m_last_ping_size = ping_size;
+		m_guitext_showping->setOverrideFont(g_fontengine->getFont(
+			(unsigned int)(g_fontengine->getDefaultFontSize() * ping_size), FM_Unspecified));
+	}
+	u32 hud_text_height = m_guitext_coords->getActiveFont() ?
+		m_guitext_coords->getActiveFont()->getDimension(L"Ay").Height : g_fontengine->getTextHeight();
+
+	if (g_settings->getBool("show_coords")){
 		if (g_settings->exists("coords_sprite")) {
 			v2f data = g_settings->getV2F("coords_sprite");
 			m_guitext_coords->setRelativePosition(core::rect<s32>(data[0], data[1], screensize.X, screensize.Y));
 		} else {
-			m_guitext_coords->setRelativePosition(core::rect<s32>(5, screensize.Y - 5 - g_fontengine->getTextHeight(), screensize.X, screensize.Y));
+			m_guitext_coords->setRelativePosition(core::rect<s32>(5, screensize.Y - 5 - hud_text_height, screensize.X, screensize.Y));
 		}
-		setStaticText(m_guitext_coords, utf8_to_wide(os.str()).c_str());
+		if (update_coords_text) {
+			std::ostringstream os(std::ios_base::binary);
+			os << std::setprecision(1) << std::fixed
+				<< "(" << "X: "<< (player_position.X / BS)
+				<< ", Y: " << (player_position.Y / BS)
+				<< ", Z: " << (player_position.Z / BS) << ")";
+			setStaticText(m_guitext_coords, utf8_to_wide(os.str()).c_str());
+		}
 	} else {
 		m_guitext_coords -> setText(L"");
 	}
@@ -144,10 +191,27 @@ void GameUI::update(const RunStats &stats, Client *client, MapDrawControl *draw_
 			v2f fov_data = g_settings->getV2F("fov_coords");
 			m_guitext_showfps->setRelativePosition(core::rect<s32>(fov_data[0], fov_data[1], screensize.X, screensize.Y));
 		} else {
-			m_guitext_showfps->setRelativePosition(core::rect<s32>(5, screensize.Y - 25 - g_fontengine->getTextHeight(),
+			m_guitext_showfps->setRelativePosition(core::rect<s32>(5, screensize.Y - 25 - hud_text_height,
 			screensize.X, screensize.Y));
 		}
-		setStaticText(m_guitext_showfps, utf8_to_wide("[FPS: "+std::to_string(int(1.0 / stats.dtime_jitter.avg))+ "]"));
+		if (update_fps_text)
+			setStaticText(m_guitext_showfps, utf8_to_wide("[FPS: "+std::to_string(int(1.0 / stats.dtime_jitter.avg))+ "]"));
+	} else {
+		m_guitext_showfps->setText(L"");
+	}
+
+	if (g_settings->getBool("show_ping")) {
+		if (g_settings->exists("ping_coords")) {
+			v2f ping_data = g_settings->getV2F("ping_coords");
+			m_guitext_showping->setRelativePosition(core::rect<s32>(ping_data[0], ping_data[1], screensize.X, screensize.Y));
+		} else {
+			m_guitext_showping->setRelativePosition(core::rect<s32>(5, screensize.Y - 45 - hud_text_height,
+			screensize.X, screensize.Y));
+		}
+		if (update_ping_text)
+			setStaticText(m_guitext_showping, utf8_to_wide("[Ping: "+std::to_string(int(client->getRTT() * 1000.0f))+ " ms]"));
+	} else {
+		m_guitext_showping->setText(L"");
 	}
 
 	// Minimal debug text must only contain info that can't give a gameplay advantage
@@ -307,10 +371,7 @@ void GameUI::updateChatSize()
 	chat_size.LowerRightCorner.Y = std::min((s32)window_size.Y,
 			m_guitext_chat->getTextHeight() + chat_y);
 
-	if (chat_size == m_current_chat_size)
-		return;
 	m_current_chat_size = chat_size;
-
 	m_guitext_chat->setRelativePosition(chat_size);
 }
 
@@ -419,5 +480,10 @@ void GameUI::clearText()
 	if (m_guitext_showfps) {
 		m_guitext_showfps->remove();
 		m_guitext_showfps = nullptr;
+	}
+
+	if (m_guitext_showping) {
+		m_guitext_showping->remove();
+		m_guitext_showping = nullptr;
 	}
 }

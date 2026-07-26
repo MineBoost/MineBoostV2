@@ -16,6 +16,7 @@
 #include "gettext.h"
 #include "irrlicht_changes/CGUITTFont.h"
 #include "util/string.h"
+#include "gui/custom_menu/ModernUI.h"
 #include <string>
 
 inline u32 clamp_u8(s32 value)
@@ -43,23 +44,10 @@ GUIChatConsole::GUIChatConsole(
 	m_menumgr(menumgr),
 	m_animate_time_old(porting::getTimeMs())
 {
-	// load background settings
-	s32 console_alpha = g_settings->getS32("console_alpha");
-	m_background_color.setAlpha(clamp_u8(console_alpha));
-
-	// load the background texture depending on settings
-	ITextureSource *tsrc = client->getTextureSource();
-	if (tsrc->isKnownSourceImage("background_chat.jpg")) {
-		m_background = tsrc->getTexture("background_chat.jpg");
-		m_background_color.setRed(255);
-		m_background_color.setGreen(255);
-		m_background_color.setBlue(255);
-	} else {
-		v3f console_color = g_settings->getV3F("console_color").value_or(v3f());
-		m_background_color.setRed(clamp_u8(myround(console_color.X)));
-		m_background_color.setGreen(clamp_u8(myround(console_color.Y)));
-		m_background_color.setBlue(clamp_u8(myround(console_color.Z)));
-	}
+	// The chat background is a fixed style matching the rest of MineBoost's
+	// HUD panels (see updateBackgroundColor() below) -- not user-colorable,
+	// so there's no settings-changed callback to register here anymore.
+	updateBackgroundColor();
 
 	const u16 chat_font_size = g_settings->getU16("chat_font_size");
 	m_font = g_fontengine->getFont(chat_font_size != 0 ?
@@ -85,8 +73,28 @@ GUIChatConsole::GUIChatConsole(
 
 GUIChatConsole::~GUIChatConsole()
 {
+	g_settings->deregisterAllChangedCallbacks(this);
 	if (m_font)
 		m_font->drop();
+}
+
+void GUIChatConsole::updateBackgroundColor()
+{
+	// Fixed to match the rest of MineBoost's HUD panels (MusicHUD/
+	// TargetHUD/InventoryHUD/CraftHUD in src/client/hud.cpp) -- no longer
+	// reads "console_color"/"console_alpha", and there's no "Chat
+	// background" row in the "Colors" panel (src/gui/custom_menu/Menu.cpp)
+	// anymore either.
+	m_background_color = video::SColor(190, 22, 24, 30);
+
+	// load the background texture depending on settings
+	ITextureSource *tsrc = m_client->getTextureSource();
+	if (tsrc->isKnownSourceImage("background_chat.jpg")) {
+		m_background = tsrc->getTexture("background_chat.jpg");
+		m_background_color.setRed(255);
+		m_background_color.setGreen(255);
+		m_background_color.setBlue(255);
+	}
 }
 
 void GUIChatConsole::openConsole(f32 scale)
@@ -284,10 +292,15 @@ void GUIChatConsole::drawBackground()
 	}
 	else
 	{
-		driver->draw2DRectangle(
-			m_background_color,
-			core::rect<s32>(0, 0, m_screensize.X, m_height),
-			&AbsoluteClippingRect);
+		// Same rounded-corner/border look as MineBoost's other HUD panels
+		// (MusicHUD/TargetHUD/InventoryHUD/CraftHUD in src/client/hud.cpp)
+		// instead of a flat full-bleed rectangle. Shadow off for the same
+		// reason those panels turn it off: at a short console height (e.g.
+		// mid-open/close animation) ModernUI::dropShadow()'s corner arcs
+		// would poke out past the box as solid smears.
+		core::rect<s32> box(0, 0, m_screensize.X, m_height);
+		ModernUI::panel(driver, box, ModernUI::Radius, m_background_color,
+			ModernUI::PanelBorderDim, /*shadow=*/false);
 	}
 }
 

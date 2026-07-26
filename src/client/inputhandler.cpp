@@ -8,6 +8,7 @@
 #include "inputhandler.h"
 #include "gui/mainmenumanager.h"
 #include "gui/touchcontrols.h"
+#include "gui/custom_menu/Menu.h"
 #include "hud.h"
 #include "log_internal.h"
 #include "client/renderingengine.h"
@@ -71,6 +72,7 @@ void KeyCache::populate()
 	key[KeyType::QUICKTUNE_DEC] = getKeySetting("keymap_quicktune_dec");
 	key[KeyType::SPRITES] = getKeySetting("keymap_sprite_manager");
 	key[KeyType::MENU] = getKeySetting("keymap_menu");
+	key[KeyType::MACRO_WHEEL] = getKeySetting("keymap_macro_wheel");
 
 	for (int i = 0; i < HUD_HOTBAR_ITEMCOUNT_MAX; i++) {
 		std::string slot_key_name = "keymap_slot" + std::to_string(i + 1);
@@ -89,6 +91,26 @@ void KeyCache::populate()
 
 bool MyEventReceiver::OnEvent(const SEvent &event)
 {
+	// MineBoost: keybinds set via the "Colors"/settings menu (middle-click
+	// a tile to bind it, see startBindCapture() in
+	// src/gui/custom_menu/Menu.cpp) need to toggle their setting the same
+	// way whether that menu is open, closed, or was never opened this
+	// session -- that's the whole point of a keybind. Checked here,
+	// completely unconditionally, before any of the menu-active/early-
+	// return branches below, since those are exactly what used to make
+	// this only work while the settings menu was open (see the comment on
+	// Menu::checkGlobalBinds() in src/gui/custom_menu/Menu.h for the full
+	// story). Never consumes the event -- it's a pure side effect, so a
+	// bind never blocks whatever that key/button would otherwise do.
+	Menu::checkGlobalBinds(event);
+	// Lets the settings menu (Colors, HandView, keybinds, ...) be opened
+	// from the title screen too, before ever joining a world -- see the
+	// comment on Menu::checkMainMenuOpenKeybind() in
+	// src/gui/custom_menu/Menu.h. No-op whenever the only Menu instance
+	// that currently exists is the in-game one (it has a Client); that
+	// one keeps opening via Game::processKeyInput() exactly as before.
+	Menu::checkMainMenuOpenKeybind(event);
+
 	if (event.EventType == irr::EET_LOG_TEXT_EVENT) {
 		static const LogLevel irr_loglev_conv[] = {
 			LL_VERBOSE, // ELL_DEBUG
@@ -188,6 +210,16 @@ bool MyEventReceiver::OnEvent(const SEvent &event)
 			keyWasDown.set(RMBKey);
 			keyWasPressed.set(RMBKey);
 			break;
+		case EMIE_XBUTTON1_PRESSED_DOWN:
+			keyIsDown.set(X1Key);
+			keyWasDown.set(X1Key);
+			keyWasPressed.set(X1Key);
+			break;
+		case EMIE_XBUTTON2_PRESSED_DOWN:
+			keyIsDown.set(X2Key);
+			keyWasDown.set(X2Key);
+			keyWasPressed.set(X2Key);
+			break;
 		case EMIE_LMOUSE_LEFT_UP:
 			keyIsDown.unset(LMBKey);
 			keyWasReleased.set(LMBKey);
@@ -199,6 +231,14 @@ bool MyEventReceiver::OnEvent(const SEvent &event)
 		case EMIE_RMOUSE_LEFT_UP:
 			keyIsDown.unset(RMBKey);
 			keyWasReleased.set(RMBKey);
+			break;
+		case EMIE_XBUTTON1_LEFT_UP:
+			keyIsDown.unset(X1Key);
+			keyWasReleased.set(X1Key);
+			break;
+		case EMIE_XBUTTON2_LEFT_UP:
+			keyIsDown.unset(X2Key);
+			keyWasReleased.set(X2Key);
 			break;
 		case EMIE_MOUSE_WHEEL:
 			mouse_wheel += event.MouseInput.Wheel;

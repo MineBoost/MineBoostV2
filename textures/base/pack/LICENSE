@@ -502,3 +502,15 @@ necessary.  Here is a sample; alter the names:
   Ty Coon, President of Vice
 
 That's all there is to it!
+
+----------------------------------------------------------------------
+
+character.png ("Minetest Sam", the default player skin used as a
+fallback face for Discord Rich Presence when no texture pack overrides
+it) is not part of the LGPL-2.1 code above -- it's reused as-is from
+games/devtest/mods/testentities/models/testentities_sam.png:
+
+  Jordach (CC BY-SA 3.0)
+
+See games/devtest/mods/testentities/models/LICENSE.txt for the full
+attribution of that model/texture set.

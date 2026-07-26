@@ -85,12 +85,35 @@ private:
 
 	float m_drawtime_avg = 0;
 
+	// Debug/overlay text like coords, FPS and ping only needs to be
+	// legible, not updated every single rendered frame -- re-shaping a
+	// GUI text label (word wrap, glyph layout) on every call is wasted
+	// work at high frame rates and adds up on weak hardware. These throttle
+	// the actual setText()/relayout calls to a fixed real-time interval,
+	// independent of the current FPS, while the label's on-screen position
+	// still follows drag/settings changes every frame (cheap).
+	static constexpr float HUD_TEXT_UPDATE_INTERVAL = 0.2f; // 5 updates/sec
+	float m_coords_text_timer = HUD_TEXT_UPDATE_INTERVAL;
+	float m_fps_text_timer = HUD_TEXT_UPDATE_INTERVAL;
+	float m_ping_text_timer = HUD_TEXT_UPDATE_INTERVAL;
+
+	// Global size multiplier for MineBoost's custom HUD elements (see
+	// "hud_size" in src/gui/custom_menu/Menu.cpp, "HUD Size" slider),
+	// each combined with its own independent per-element multiplier
+	// ("coords_size"/"fps_size"/"ping_size", adjustable by scrolling over
+	// the element while in "Move HUD" edit mode). Cached per-element so
+	// each font is only rebuilt when its own combined value changes.
+	float m_last_coords_size = -1.0f;
+	float m_last_fps_size = -1.0f;
+	float m_last_ping_size = -1.0f;
+
 	gui::IGUIStaticText *m_guitext = nullptr;  // First line of debug text
 	gui::IGUIStaticText *m_guitext2 = nullptr; // Second line of debug text
 
 	gui::IGUIStaticText *m_guitext_info = nullptr; // At the middle of the screen
 	gui::IGUIStaticText *m_guitext_coords = nullptr;
 	gui::IGUIStaticText *m_guitext_showfps = nullptr;
+	gui::IGUIStaticText *m_guitext_showping = nullptr;
 	std::wstring m_infotext;
 
 	gui::IGUIStaticText *m_guitext_status = nullptr;

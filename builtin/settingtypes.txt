@@ -223,9 +223,9 @@ force_render_skybox (Force render skybox) bool true
 use_custom_fog_color (Custom fog color) bool false
 # Color of fog
 custom_fog_color (Fog color) string (0,0,0)
-# Enable sky color
+# Enable sky color 
 use_custom_sky_color (custom sky color) bool false
-# Color of sky
+# Color of sky 
 custom_sky_color (Sky color) string (0,0,0)
 
 [**Water]
@@ -263,6 +263,16 @@ node_color (Node illumination color) string (255,0,0)
 [**Discord]
 # Enable Discord Rich Presence (shows what you're playing on your Discord profile)?
 discord_rpc_enabled (Discord Rich Presence) bool true
+# Show your nickname as the tooltip when someone hovers over the
+# MineBoostV2 image on your Discord Rich Presence card.
+discord_rpc_show_nickname (Show nickname in Discord RPC) bool true
+# Show what you're currently playing (world name in singleplayer, or
+# server name/address in multiplayer) in your Discord Rich Presence card.
+discord_rpc_show_playing (Show where you playing in Discord RPC) bool true
+# Comma-separated list of server addresses (address:port) on which Discord
+# Rich Presence should be completely hidden, e.g.
+# "example.com:30000,1.2.3.4:30000". Leave empty to never hide it.
+discord_rpc_hidden_servers (Hide Discord RPC on these servers) string
 
 [Graphics and Audio]
 
@@ -758,8 +768,50 @@ menu_clouds (Clouds in menu) bool true
 
 [**HUD]
 
+#    Shows a "now playing" overlay in the top-right corner of the screen
+#    for whatever music is currently playing on your system (e.g. Spotify).
+music_hud (Show now-playing music HUD) bool true
+
 #    Modifies the size of the HUD elements.
 hud_scaling (HUD scaling) float 1.0 0.5 20
+
+#    Size multiplier for MineBoost's custom HUD elements (coords, FPS,
+#    ping, KeyStroker, ShowCPS, MusicHUD, TargetHUD, PhotoHUD). Adjustable
+#    via the "HUD Size" slider in the settings menu.
+hud_size (MineBoost HUD size) float 1.0 0.5 2.5
+
+#    Per-element size multipliers, on top of "hud_size" above. Each is
+#    adjustable individually by scrolling the mouse wheel over that HUD
+#    while in "Move HUD" edit mode.
+coords_size (ShowCoords size) float 1.0 0.5 2.5
+fps_size (ShowFPS size) float 1.0 0.5 2.5
+ping_size (ShowPing size) float 1.0 0.5 2.5
+keys_size (KeyStroker size) float 1.0 0.5 2.5
+cps_size (ShowCPS size) float 1.0 0.5 2.5
+music_hud_size (MusicHUD size) float 1.0 0.5 2.5
+target_hud_size (TargetHUD size) float 1.0 0.5 2.5
+inventory_hud_size (InventoryHUD size) float 1.0 0.5 2.5
+craft_hud_size (CraftHUD size) float 1.0 0.5 2.5
+
+#    Snap-to-grid for the "Move HUD" edit mode -- toggle it in the
+#    settings menu; hold Alt while dragging to bypass it for one drag.
+hud_grid_enabled (HUD editor snap grid) bool true
+
+#    Grid spacing in pixels for the above. Adjustable by scrolling over
+#    empty space (not over any HUD element) while in edit mode.
+hud_grid_size (HUD editor grid size) int 20 5 100
+
+#    Reposition/rescale the wielded item ("hand") independently of its
+#    swing animation. See "HandView" in the settings menu.
+handview_enabled (HandView enabled) bool false
+handview_offset_x (HandView X offset) float 0
+handview_offset_y (HandView Y offset) float 0
+handview_offset_z (HandView Z offset) float 0
+handview_scale (HandView scale) float 1.0 0.3 3.0
+
+#    Hand/wielditem swing animation style. "vanilla" is the original,
+#    untouched Luanti swing.
+hand_anim_style (Hand animation style) enum vanilla vanilla,static,fast,sway,chime,old,punch,tilt
 
 #    Whether name tag backgrounds should be shown by default.
 #    Mods may still set a background.
@@ -782,12 +834,6 @@ recent_chat_messages (Recent Chat Messages) int 6 2 20
 
 #    In-game chat console height, between 0.1 (10%) and 1.0 (100%).
 console_height (Console height) float 0.6 0.1 1.0
-
-#    In-game chat console background color (R,G,B).
-console_color (Console color) string (0,0,0)
-
-#    In-game chat console background alpha (opaqueness, between 0 and 255).
-console_alpha (Console alpha) int 200 0 255
 
 #    Clickable weblinks (middle-click or Ctrl+left-click) enabled in chat console output.
 clickable_chat_weblinks (Chat weblinks) bool true
@@ -2267,6 +2313,13 @@ curl_parallel_limit (cURL parallel limit) int 8 1 2147483647
 
 #    Maximum time a file download (e.g. a mod download) may take, stated in milliseconds.
 curl_file_download_timeout (cURL file download timeout) int 300000 5000 2147483647
+
+#    Optional URL of a MineBoostV2 presence server. When set, this client POSTs
+#    {"name": "<your name>"} to "<url>/presence" every 15 seconds and expects a
+#    JSON array of player names the server currently considers online back --
+#    those players get the MineBoostV2 badge over their nametag, the same as
+#    the built-in mod-channel detection method. Leave empty to disable.
+mineboost_presence_server_url (MineBoostV2 presence server URL) string
 
 [**Miscellaneous]
 

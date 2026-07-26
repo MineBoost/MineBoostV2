@@ -1,5 +1,6 @@
 #include "Items.h"
 #include "Menu.h"
+#include "gui/custom_menu/ModernUI.h"
 #include "../settings.h"
 
 Items::Items(core::rect<s32> position)
@@ -48,19 +49,6 @@ bool Items::isPressed(const irr::SEvent& event)
                 return true;
             }
         }
-
-        // if (event.MouseInput.Event == irr::EMIE_RMOUSE_PRESSED_DOWN) {
-        //     if (position.isPointInside(core::vector2d<s32>(event.MouseInput.X, event.MouseInput.Y))) {
-        //         const Configuration& config = this->setting.config;
-        //         std::cout << "Setting Name: " << this->setting.name << std::endl;
-        //         std::cout << "Setting Value: " << this->setting.value << std::endl;
-        //         std::cout << "Setting Category: " << static_cast<int>(this->setting.category) << std::endl;
-        //         std::cout << "Config Type: " << static_cast<int>(config.t) << std::endl;
-        //         std::cout << "Config Min: " << config.min << std::endl;
-        //         std::cout << "Config Max: " << config.max << std::endl;
-        //         std::cout << "Config Save Data: " << config.save_data << std::endl;
-        //     }
-        // }
     }
 
     return false;
@@ -81,20 +69,47 @@ void Items::draw(irr::video::IVideoDriver *driver, s32 screenW, s32 screenH)
 {
     this->screenW = screenW;
     this->screenH = screenH;
-    driver->draw2DRectangle(color_def, position);
-    if (g_settings->getBool(this->setting_item)) {
-        driver->draw2DRectangleOutline(position, irr::video::SColor(255, 0, 255, 0));
-    } else {
-        driver->draw2DRectangleOutline(position, irr::video::SColor(230, 75, 125, 250));
-    }
+    bool enabled = g_settings->getBool(this->setting_item);
+    // Same dark ModernUI fill either way (keeps the grid visually calm),
+    // but a green accent border when the setting is on vs. the usual dim
+    // blue when it's off -- readable at a glance without the old
+    // saturated green/blue debug outlines clashing with the rest of the UI.
+    irr::video::SColor border = enabled ?
+        irr::video::SColor(255, 70, 210, 130) : ModernUI::PanelBorderDim;
+    ModernUI::panel(driver, position, ModernUI::RadiusSmall, color_def, border,
+        /*shadow=*/false);
 
     gui::IGUIFont* font = g_fontengine->getFont(FONT_SIZE_UNSPECIFIED, FM_Standard);
     core::dimension2du textSize = font->getDimension(title.c_str());
-    s32 textX = position.UpperLeftCorner.X + (position.getWidth() - textSize.Width) / 2;
-    s32 textY = position.UpperLeftCorner.Y + (position.getHeight() - textSize.Height) / 5;
+    // textSize.Width/Height are u32 (Irrlicht's dimension2du). Mixing those
+    // with the signed position math below via plain "-" silently promotes
+    // the whole expression to unsigned: for any label wider than the tile
+    // (position.getWidth() - textSize.Width < 0), that wraps to a huge u32
+    // instead of a small negative number, and dividing THAT by 2 doesn't
+    // recover the correct value (unsigned division of a wrapped bit
+    // pattern isn't the same as the intended signed division) -- so the
+    // label silently renders miles off-screen instead of just overflowing
+    // the tile a bit. Only bit anyone hit before was "Fast place" (fits
+    // fine within the 120px tile), so it went unnoticed until a longer
+    // single-word label ("NoFriendDamage") came along. Explicit s32 casts
+    // make this ordinary signed arithmetic regardless of label length.
+    s32 textW = (s32)textSize.Width, textH = (s32)textSize.Height;
+    s32 textX = position.UpperLeftCorner.X + (position.getWidth() - textW) / 2;
+    s32 textY = position.UpperLeftCorner.Y + (position.getHeight() - textH) / 5;
 
-    font->draw(title.c_str(), core::rect<s32>(textX, textY, textX + textSize.Width, textY + textSize.Height),
+    font->draw(title.c_str(), core::rect<s32>(textX, textY, textX + textW, textY + textH),
                irr::video::SColor(255, 255, 255, 255));
+
+    if (has_advanced_settings) {
+        const wchar_t *hint = L"RMB: settings";
+        core::dimension2du hintSize = font->getDimension(hint);
+        s32 hintW = (s32)hintSize.Width, hintH = (s32)hintSize.Height;
+        s32 hintX = position.UpperLeftCorner.X + (position.getWidth() - hintW) / 2;
+        s32 hintY = position.LowerRightCorner.Y - hintH - 4;
+        font->draw(hint, core::rect<s32>(hintX, hintY, hintX + hintW, hintY + hintH),
+                   irr::video::SColor(200, 200, 200, 200));
+    }
+
     drawSetting(driver);
 }
 

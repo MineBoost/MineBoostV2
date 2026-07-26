@@ -65,6 +65,10 @@ public:
 		QUICKTUNE_INC,
 		QUICKTUNE_DEC,
 
+		// Hold to open the Macro Wheel, scroll to select, release to run
+		// (default Tab) -- see hud->drawMacroWheel() / MacroList.
+		MACRO_WHEEL,
+
 		// hotbar
 		SLOT_1,
 		SLOT_2,

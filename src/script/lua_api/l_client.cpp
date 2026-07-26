@@ -490,6 +490,17 @@ int ModApiClient::l_is_moved(lua_State* L)
     return 0;
 }
 
+int ModApiClient::l_get_screen_size(lua_State* L)
+{
+    auto size = RenderingEngine::get_video_driver()->getScreenSize();
+    lua_newtable(L);
+    lua_pushinteger(L, size.Width);
+    lua_setfield(L, -2, "x");
+    lua_pushinteger(L, size.Height);
+    lua_setfield(L, -2, "y");
+    return 1;
+}
+
 void ModApiClient::Initialize(lua_State *L, int top)
 {
 	API_FCT(get_current_modname);
@@ -518,4 +529,5 @@ void ModApiClient::Initialize(lua_State *L, int top)
     API_FCT(get_width_offset);
     API_FCT(get_height_offset);
     API_FCT(is_moved);
+    API_FCT(get_screen_size);
 }

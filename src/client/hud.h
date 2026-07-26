@@ -12,6 +12,7 @@
 #include "irr_ptr.h"
 #include "irr_aabb3d.h"
 #include "../hud.h"
+#include "nowplaying.h"
 
 class Client;
 class ITextureSource;
@@ -52,6 +53,23 @@ public:
 	bool use_hotbar_selected_image = false;
 
 	bool pointing_at_object = false;
+	bool target_is_player = false;
+
+	// TargetHUD: small name+HP panel shown only while directly aiming at
+	// a player (unlike target_is_player above, which also stays true for
+	// the locked-target-but-not-aimed-at case used for particles).
+	bool target_hud_active = false;
+	std::string target_hud_name;
+	std::string target_hud_skin; // skin texture name, used for the face avatar
+	u16 target_hud_hp = 0;
+	u16 target_hud_hp_max = 20;
+
+	// Macro Wheel: radial menu shown while the wheel key (default Tab)
+	// is held. Game::processMacroWheel() (src/client/game.cpp) owns the
+	// open/select logic and just writes these two; drawMacroWheel()
+	// below only reads them (plus MacroList) to render.
+	bool macro_wheel_open = false;
+	int macro_wheel_selected = 0;
 
 	Hud(Client *client, LocalPlayer *player,
 			Inventory *inventory);
@@ -66,6 +84,14 @@ public:
 	void resizeHotbar();
 	void drawCrosshair();
 	void drawSelectionMesh();
+	void drawTargetHud();
+	void drawMusicHud();
+	void drawPhotoHud();
+	void drawDebugTextBackgrounds();
+	void drawMacroWheel();
+	void drawInventoryHud();
+	void drawCraftHud();
+	// void drawArmorHud(); // ArmorHUD temporarily disabled
 	void updateSelectionMesh(const v3s16 &camera_offset);
 
 	std::vector<aabb3f> *getSelectionBoxes() { return &m_selection_boxes; }
@@ -94,6 +120,10 @@ public:
 
 private:
 	bool calculateScreenPos(const v3s16 &camera_offset, HudElement *e, v2s32 *pos);
+	NowPlayingProvider m_now_playing;
+	video::ITexture *m_music_thumbnail_texture = nullptr;
+	unsigned long long m_music_thumbnail_id = 0;
+	void updateMusicThumbnail(const NowPlayingInfo &info);
 	void drawStatbar(v2s32 pos, u16 corner, u16 drawdir,
 			const std::string &texture, const std::string& bgtexture,
 			s32 count, s32 maxcount, v2s32 offset, v2s32 size = v2s32());
@@ -102,7 +132,8 @@ private:
 			s32 inv_offset, InventoryList *mainlist, u16 selectitem,
 			u16 direction, bool is_hotbar);
 
-	void drawItem(const ItemStack &item, const core::rect<s32> &rect, bool selected);
+	void drawItem(const ItemStack &item, const core::rect<s32> &rect, bool selected,
+			bool draw_slot_bg = true);
 
 	void drawCompassTranslate(HudElement *e, video::ITexture *texture,
 			const core::rect<s32> &rect, int way);

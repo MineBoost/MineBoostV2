@@ -300,6 +300,44 @@ if(WIN32)
 	endif()
 	list(APPEND PLATFORM_LIBS ws2_32.lib version.lib shlwapi.lib winmm.lib)
 
+	if(BUILD_CLIENT)
+		# Used by MusicHud for Windows System Media Transport Controls
+		# (album art + playback position). Needs the mingw-w64 cppwinrt
+		# package: on MSYS2 CLANG64, `pacman -S mingw-w64-clang-x86_64-cppwinrt`
+		# (or the mingw64/ucrt64 equivalent for other MSYS2 environments).
+		#
+		# winrt/base.h unconditionally requires native coroutine support
+		# (even though nowplaying.cpp itself never uses co_await), which
+		# only exists under C++20 -- the project otherwise targets C++17.
+		# CMP0067 (NEW, implied by our cmake_minimum_required >= 3.8) makes
+		# CMAKE_CXX_STANDARD get auto-forwarded into check_include_file_cxx's
+		# internal test compile, so just adding "-std=c++20" via
+		# CMAKE_REQUIRED_FLAGS isn't reliable -- the forwarded "-std=c++17"
+		# can land after it on the command line and silently win. Instead,
+		# temporarily override CMAKE_CXX_STANDARD itself for the check, then
+		# restore it.
+		include(CheckIncludeFileCXX)
+		set(_mineboost_saved_cxx_standard "${CMAKE_CXX_STANDARD}")
+		set(CMAKE_CXX_STANDARD 20)
+		check_include_file_cxx("winrt/Windows.Media.Control.h" HAVE_WINRT_SMTC)
+		set(CMAKE_CXX_STANDARD "${_mineboost_saved_cxx_standard}")
+		unset(_mineboost_saved_cxx_standard)
+		if(HAVE_WINRT_SMTC)
+			add_compile_definitions(HAVE_WINRT_SMTC)
+			list(APPEND PLATFORM_LIBS windowsapp.lib)
+			# Only nowplaying.cpp needs C++20 (for the same coroutine-support
+			# requirement as above) -- keep the rest of the project on C++17
+			# by overriding the standard for just this one translation unit.
+			set_source_files_properties(
+				"${CMAKE_CURRENT_SOURCE_DIR}/client/nowplaying.cpp"
+				PROPERTIES COMPILE_OPTIONS "-std=c++20"
+			)
+		else()
+			message(STATUS "winrt/Windows.Media.Control.h not found; MusicHud album art/progress "
+				"will be unavailable on Windows (install mingw-w64-clang-x86_64-cppwinrt)")
+		endif()
+	endif(BUILD_CLIENT)
+
 	set(EXTRA_DLL "" CACHE FILEPATH "Optional paths to additional DLLs that should be packaged")
 
 	# DLLs are automatically copied to the output directory by vcpkg when VCPKG_APPLOCAL_DEPS=ON
@@ -333,6 +371,22 @@ else()
 		if (HAVE_LIBRT)
 			list(APPEND PLATFORM_LIBS -lrt)
 		endif(HAVE_LIBRT)
+
+		if(BUILD_CLIENT)
+			# Used by MusicHud to read "now playing" info from Spotify/browser
+			# tabs (YouTube Music, SoundCloud) via the MPRIS D-Bus interface.
+			find_package(PkgConfig QUIET)
+			if(PkgConfig_FOUND)
+				pkg_check_modules(DBUS QUIET dbus-1)
+			endif()
+			if(DBUS_FOUND)
+				add_compile_definitions(HAVE_DBUS)
+				list(APPEND PLATFORM_LIBS ${DBUS_LIBRARIES})
+				include_directories(${DBUS_INCLUDE_DIRS})
+			else()
+				message(STATUS "dbus-1 not found; MusicHud will be unavailable on this build")
+			endif()
+		endif(BUILD_CLIENT)
 	endif(APPLE)
 
 	find_library(ICONV_LIBRARY iconv)
