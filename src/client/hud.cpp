@@ -1348,6 +1348,48 @@ void Hud::drawDebugTextBackgrounds()
 	draw_box("show_ping", "ping_coords", "ping_size", 45, "hud_color_ping");
 }
 
+// KeyStroker/ShowCPS background panels. These used to be a single baked
+// image (textures/base/pack/keys_panel_bg.png / cps_panel_bg.png) drawn
+// from builtin/client/keystroker.lua, tinted as a whole by
+// "hud_color_keystroker_border"/"hud_color_cps_border" -- but the border in that PNG is
+// baked-in pixel color (a fixed blue, confirmed by sampling it directly),
+// so a multiply-tint could only ever darken/shift that exact blue, never
+// actually recolor it to whatever the Colors panel says. Drawn here as a
+// real ModernUI panel instead (fixed fill + a genuinely separate,
+// genuinely colorable border, exactly like every other MineBoost HUD
+// panel), matching the same size/position math the Lua side already
+// derived: "keys_x"/"keys_y" ("cps_x"/"cps_y") are that panel's own
+// top-left corner (see the comment on base_pos in
+// update_hud_positions()/update_cps_hud_position() there), and its
+// rendered size is native_texture_size * BG_BASE_SCALE(2) * hud_size --
+// 160x160 for keys (80x80 native), 180x54 for cps (90x27 native). The
+// individual key icons/CPS text themselves are unaffected -- still drawn
+// by keystroker.lua as before, just with nothing behind them anymore.
+void Hud::drawKeyStrokerCpsBackgrounds()
+{
+	float hud_size = rangelim(g_settings->getFloat("hud_size"), 0.5f, 2.5f);
+
+	if (g_settings->getBool("show_keys")) {
+		float size = hud_size * rangelim(g_settings->getFloat("keys_size"), 0.5f, 2.5f);
+		s32 x = g_settings->getS32("keys_x");
+		s32 y = g_settings->getS32("keys_y");
+		s32 w = (s32)(160 * size);
+		s32 h = (s32)(160 * size);
+		core::rect<s32> box(x, y, x + w, y + h);
+		drawHudColorPanel(driver, box, "hud_color_keystroker_border");
+	}
+
+	if (g_settings->getBool("show_cps")) {
+		float size = hud_size * rangelim(g_settings->getFloat("cps_size"), 0.5f, 2.5f);
+		s32 x = g_settings->getS32("cps_x");
+		s32 y = g_settings->getS32("cps_y");
+		s32 w = (s32)(180 * size);
+		s32 h = (s32)(54 * size);
+		core::rect<s32> box(x, y, x + w, y + h);
+		drawHudColorPanel(driver, box, "hud_color_cps_border");
+	}
+}
+
 // Radial menu shown while the Macro Wheel key (default Tab) is held --
 // see Game::processMacroWheel() in src/client/game.cpp, which owns
 // macro_wheel_open/macro_wheel_selected and the actual key/scroll

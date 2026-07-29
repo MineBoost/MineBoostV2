@@ -88,6 +88,7 @@ public:
 	void drawMusicHud();
 	void drawPhotoHud();
 	void drawDebugTextBackgrounds();
+	void drawKeyStrokerCpsBackgrounds();
 	void drawMacroWheel();
 	void drawInventoryHud();
 	void drawCraftHud();

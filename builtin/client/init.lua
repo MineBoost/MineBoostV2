@@ -11,6 +11,12 @@ dofile(clientpath .. "chatcommands.lua")
 dofile(clientpath .. "misc.lua")
 dofile(clientpath .. "keystroker.lua")
 assert(loadfile(commonpath .. "item_s.lua"))({}) -- Just for push/read node functions
+
+-- Tracks whether the LMB-dig hit-particle burst below already fired for
+-- the current button-down, so holding LMB doesn't spawn a new burst every
+-- single frame -- reset to false as soon as the button's released.
+local lmbpress = false
+
 function register_hits(pos, dir, texture, raycast, amount)
 	if not minetest.localplayer then
 		return false
@@ -24,7 +30,7 @@ function register_hits(pos, dir, texture, raycast, amount)
                 minetest.add_particlespawner({
                     amount = amount,
                     time = 0.1,
-                    minpos = new_pos, 
+                    minpos = new_pos,
                     maxpos = other_pos,
                     minvel = {x = -1, y = -2, z = -1},
                     maxvel = {x = 1, y = 2, z = 1},

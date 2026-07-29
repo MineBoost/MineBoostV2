@@ -457,15 +457,17 @@ void set_default_settings()
 	settings->setDefault("hud_color_inventory", "(22,24,30)");
 	settings->setDefault("hud_color_craft", "(22,24,30)");
 	settings->setDefault("hud_color_target", "(22,24,30)");
-	// KeyStroker's backdrop (textures/base/pack/keys_panel_bg.png, tinted
-	// via the "number" field on its "image" HUD element -- see
-	// keys_bg_hud in builtin/client/keystroker.lua) IS the visible
-	// outline around the W/A/S/D icon cluster, so this setting recolors
-	// exactly that. White (unchanged) by default.
-	settings->setDefault("hud_color_keystroker_border", "(255,255,255)");
-	// ShowCPS's backdrop (cps_bg_hud, textures/base/pack/cps_panel_bg.png)
-	// works exactly the same way KeyStroker's does above.
-	settings->setDefault("hud_color_cps_border", "(255,255,255)");
+	// KeyStroker's backdrop is a real ModernUI panel now (see
+	// Hud::drawKeyStrokerCpsBackgrounds() in src/client/hud.cpp), not a
+	// tinted image -- the old keys_panel_bg.png border was baked-in pixel
+	// color (a fixed blue, confirmed by sampling it directly), so tinting
+	// it could only ever darken/shift that exact blue and never actually
+	// recolor it to whatever this setting said. Defaulted to that same
+	// blue so nothing changes for anyone who hasn't touched this yet.
+	settings->setDefault("hud_color_keystroker_border", "(101,167,255)");
+	// ShowCPS's backdrop works exactly the same way KeyStroker's does
+	// above (cps_panel_bg.png used the same blue border color).
+	settings->setDefault("hud_color_cps_border", "(101,167,255)");
 	// Border color of the "Move HUD" edit-mode drag-preview boxes (the
 	// KeyStroker/CPS/InventoryHUD/CraftHUD/MusicHUD/etc. drag rectangles) --
 	// separate from the individual hud_color_* fills/tints above. Default

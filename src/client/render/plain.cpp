@@ -54,6 +54,7 @@ void DrawHUD::run(PipelineContext &context)
 		context.hud->drawMusicHud();
 		context.hud->drawPhotoHud();
 		context.hud->drawDebugTextBackgrounds();
+		context.hud->drawKeyStrokerCpsBackgrounds();
 		context.hud->drawMacroWheel();
 		context.client->getCamera()->drawNametags();
 		context.client->getCamera()->drawFriendESP();
