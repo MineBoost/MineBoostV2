@@ -150,7 +150,7 @@ public:
     void updateHitParticleScrollBarPosition(gui::IGUIScrollBar* scrollbar, int screenW, int screenH);
     void updateTargetParticleScrollBarPosition(gui::IGUIScrollBar* scrollbar, int screenW, int screenH);
     void updateHudSizeScrollBarPosition(gui::IGUIScrollBar* scrollbar, int screenW, int screenH);
-    
+
     std::vector<Setting> getSettings() {
         std::vector<Setting> settings;
 
@@ -256,6 +256,8 @@ private:
     Button photo_pick_face_button;
     Button photo_pick_cat_kuki_button;
     Button photo_pick_mellstroy_button;
+    Button photo_pick_pawn_black_button;
+    Button photo_pick_pawn_two_black_button;
     void openPhotoSettings();
     void closePhotoSettings();
     core::rect<s32> getPhotoSettingsPanelRect();

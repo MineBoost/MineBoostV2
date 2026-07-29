@@ -20,6 +20,10 @@ std::string getSelectedPhotoHudTexture()
         return "cat_kuki.png";
     if (image == "mellstroy")
         return "mellstroy.png";
+    if (image == "pawn_black")
+        return "PawnWithBlackPeople.png";
+    if (image == "pawn_two_black")
+        return "PawnWithTwoBlackPeoples.png";
     return "face.png"; // default/fallback
 }
 
@@ -844,6 +848,12 @@ Menu::Menu(gui::IGUIEnvironment* env,
     photo_pick_mellstroy_button.addButton(core::rect<s32>(0, 0, 10, 10), L"Mellstroy");
     photo_pick_mellstroy_button.setOnClick([this]() { g_settings->set("photo_hud_image", "mellstroy"); });
 
+    photo_pick_pawn_black_button.addButton(core::rect<s32>(0, 0, 10, 10), L"Pawn+1");
+    photo_pick_pawn_black_button.setOnClick([this]() { g_settings->set("photo_hud_image", "pawn_black"); });
+
+    photo_pick_pawn_two_black_button.addButton(core::rect<s32>(0, 0, 10, 10), L"Pawn+2");
+    photo_pick_pawn_two_black_button.setOnClick([this]() { g_settings->set("photo_hud_image", "pawn_two_black"); });
+
     // "HandView" picker panel -- right-clicking the HandView tile opens a
     // swing-style picker plus 3 embedded offset/scale sliders (see
     // openHandViewSettings()/closeHandViewSettings() and the
@@ -1367,6 +1377,17 @@ void Menu::openPhotoSettings()
     photo_pick_mellstroy_button.addButton(mellstroy_rect, L"Mellstroy");
     photo_pick_mellstroy_button.setVisible(true);
 
+    s32 row2_y = row_y + btn_h + gap;
+    core::rect<s32> pawn_black_rect(panel.UpperLeftCorner.X + 20, row2_y,
+        panel.UpperLeftCorner.X + 20 + btn_w, row2_y + btn_h);
+    photo_pick_pawn_black_button.addButton(pawn_black_rect, L"Pawn+1");
+    photo_pick_pawn_black_button.setVisible(true);
+
+    core::rect<s32> pawn_two_black_rect(pawn_black_rect.LowerRightCorner.X + gap, row2_y,
+        pawn_black_rect.LowerRightCorner.X + gap + btn_w, row2_y + btn_h);
+    photo_pick_pawn_two_black_button.addButton(pawn_two_black_rect, L"Pawn+2");
+    photo_pick_pawn_two_black_button.setVisible(true);
+
     core::rect<s32> close_rect(panel.LowerRightCorner.X - 90, panel.UpperLeftCorner.Y + 10,
         panel.LowerRightCorner.X - 10, panel.UpperLeftCorner.Y + 40);
     photo_settings_close_button.addButton(close_rect, L"Close");
@@ -1379,6 +1400,8 @@ void Menu::closePhotoSettings()
     photo_pick_face_button.setVisible(false);
     photo_pick_cat_kuki_button.setVisible(false);
     photo_pick_mellstroy_button.setVisible(false);
+    photo_pick_pawn_black_button.setVisible(false);
+    photo_pick_pawn_two_black_button.setVisible(false);
     photo_settings_open = false;
     Environment->setFocus(this);
 }
@@ -1749,6 +1772,12 @@ bool Menu::OnEvent(const irr::SEvent& event)
         if (photo_pick_mellstroy_button.isPressed(event))
             return true;
 
+        if (photo_pick_pawn_black_button.isPressed(event))
+            return true;
+
+        if (photo_pick_pawn_two_black_button.isPressed(event))
+            return true;
+
         if (event.EventType == irr::EET_MOUSE_INPUT_EVENT &&
                 event.MouseInput.Event == irr::EMIE_LMOUSE_PRESSED_DOWN &&
                 !getPhotoSettingsPanelRect().isPointInside(
@@ -1962,7 +1991,7 @@ bool Menu::OnEvent(const irr::SEvent& event)
                     //     return true;
                     // }
                     break;
-                    
+
                 case irr::EMIE_LMOUSE_LEFT_UP:
                     coords_sprite.isDragging = false;
                     fov_sprite.isDragging = false;
@@ -1977,7 +2006,7 @@ bool Menu::OnEvent(const irr::SEvent& event)
                     photo_sprite.isDragging = false;
                     // armor_hud_sprite.isDragging = false; // ArmorHUD temporarily disabled
                     break;
-                    
+
                 case irr::EMIE_MOUSE_MOVED: {
                     // Snap-to-grid while dragging (see the grid overlay
                     // drawn in draw() when editMode is active) -- makes it
@@ -2156,7 +2185,7 @@ bool Menu::OnEvent(const irr::SEvent& event)
         }
         return Parent ? Parent->OnEvent(event) : false;
     }
-    
+
     if (isOpen && !editMode) {
         for (size_t i = 0; i < buttons.size(); i++) {
             buttons[i].isPressed(event);
@@ -2334,7 +2363,7 @@ void Menu::draw()
 
         // drawArmorHudPreview(driver, font, core::rect<s32>(armor_hud_sprite.get_rect())); // ArmorHUD temporarily disabled
     }
-    
+
     if (isOpen && !editMode) {
         drawBackground(driver, screenW, screenH);
 
@@ -2412,6 +2441,10 @@ void Menu::draw()
                 video::SColor(255, 0, 130, 0) : video::SColor(180, 20, 20, 20));
             photo_pick_mellstroy_button.setColor(selected == "mellstroy" ?
                 video::SColor(255, 0, 130, 0) : video::SColor(180, 20, 20, 20));
+            photo_pick_pawn_black_button.setColor(selected == "pawn_black" ?
+                video::SColor(255, 0, 130, 0) : video::SColor(180, 20, 20, 20));
+            photo_pick_pawn_two_black_button.setColor(selected == "pawn_two_black" ?
+                video::SColor(255, 0, 130, 0) : video::SColor(180, 20, 20, 20));
 
             if (font) {
                 const wchar_t *title = L"PhotoHUD settings";
@@ -2424,14 +2457,17 @@ void Menu::draw()
                     panel.LowerRightCorner.X - 20, panel.UpperLeftCorner.Y + 70),
                     video::SColor(255, 220, 220, 220));
 
+                // Pushed down below the two picker rows (was hardcoded
+                // right after a single row; a second row of buttons now
+                // sits where these hints used to start).
                 const wchar_t *hint1 = L"Only shown while a GUI (inventory, chest, menu...) is open.";
-                font->draw(hint1, core::rect<s32>(panel.UpperLeftCorner.X + 20, panel.UpperLeftCorner.Y + 130,
-                    panel.LowerRightCorner.X - 20, panel.UpperLeftCorner.Y + 150),
+                font->draw(hint1, core::rect<s32>(panel.UpperLeftCorner.X + 20, panel.UpperLeftCorner.Y + 180,
+                    panel.LowerRightCorner.X - 20, panel.UpperLeftCorner.Y + 200),
                     video::SColor(200, 190, 190, 190));
 
                 const wchar_t *hint2 = L"Drag it around via Move HUD; resize it with the HUD Size slider.";
-                font->draw(hint2, core::rect<s32>(panel.UpperLeftCorner.X + 20, panel.UpperLeftCorner.Y + 150,
-                    panel.LowerRightCorner.X - 20, panel.UpperLeftCorner.Y + 170),
+                font->draw(hint2, core::rect<s32>(panel.UpperLeftCorner.X + 20, panel.UpperLeftCorner.Y + 200,
+                    panel.LowerRightCorner.X - 20, panel.UpperLeftCorner.Y + 220),
                     video::SColor(200, 190, 190, 190));
             }
 
@@ -2440,12 +2476,12 @@ void Menu::draw()
             if (tex) {
                 core::dimension2du imgsize = tex->getOriginalSize();
                 if (imgsize.Width > 0 && imgsize.Height > 0) {
-                    s32 max_dim = 150;
+                    s32 max_dim = 130;
                     float scale = std::min((float)max_dim / imgsize.Width, (float)max_dim / imgsize.Height);
                     s32 w = std::max<s32>(1, (s32)(imgsize.Width * scale));
                     s32 h = std::max<s32>(1, (s32)(imgsize.Height * scale));
                     s32 cx = panel.UpperLeftCorner.X + (panel.getWidth() - w) / 2;
-                    s32 cy = panel.UpperLeftCorner.Y + 190;
+                    s32 cy = panel.UpperLeftCorner.Y + 240;
                     core::rect<s32> dest(cx, cy, cx + w, cy + h);
                     core::rect<s32> src(0, 0, imgsize.Width, imgsize.Height);
                     driver->draw2DImage(tex, dest, src, nullptr, nullptr, true);
@@ -2455,6 +2491,8 @@ void Menu::draw()
             photo_pick_face_button.draw(driver);
             photo_pick_cat_kuki_button.draw(driver);
             photo_pick_mellstroy_button.draw(driver);
+            photo_pick_pawn_black_button.draw(driver);
+            photo_pick_pawn_two_black_button.draw(driver);
             photo_settings_close_button.draw(driver);
         }
 
@@ -2622,11 +2660,11 @@ void Menu::draw()
 
             if (current_category == SettingCategory::Scrollbars) {
                 std::wstring wfov = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes("FOV: " + std::to_string(int(g_settings->getFloat("fov_custom.data"))));
-                
+
                 int offsetX = 190;
                 font->draw(wfov.c_str(), core::rect<s32>(((screenW - 300) / 2 + (-45)) * 1.72 - offsetX, scrollbarTop,
                 (screenW + 300) / 2 + (-45) - offsetX, scrollbarTop + 20), video::SColor(255, 255, 255, 255));
-                
+
                 std::wstring wfps = std::wstring_convert<std::codecvt_utf8<wchar_t>>().from_bytes("FPS: " + std::to_string(int(fps_scrollbar->getPos())));
                 font->draw(wfps.c_str(), core::rect<s32>(((screenW - 300) / 2 + (-45)) * 1.72 - offsetX, fpsScrollbarTop,
                 (screenW + 300) / 2 + (-45) - offsetX, fpsScrollbarTop + 20), video::SColor(255, 255, 255, 255));

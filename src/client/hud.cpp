@@ -1212,8 +1212,9 @@ void Hud::drawPhotoHud()
 	if (!isMenuActive())
 		return;
 
-	// One of 3 fixed, built-in images (textures/base/pack/face.png,
-	// cat_kuki.png, mellstroy.png) rather than a player-chosen file path --
+	// One of 5 fixed, built-in images (textures/base/pack/face.png,
+	// cat_kuki.png, mellstroy.png, PawnWithBlackPeople.png,
+	// PawnWithTwoBlackPeoples.png) rather than a player-chosen file path --
 	// selected via "photo_hud_image" (see the Photo HUD picker panel in
 	// src/gui/custom_menu/Menu.cpp), and loaded through the texture
 	// source, like every other UI texture, so a texture pack can still
@@ -1221,7 +1222,9 @@ void Hud::drawPhotoHud()
 	// its own caching.
 	std::string image = g_settings->get("photo_hud_image");
 	std::string texname = (image == "cat_kuki") ? "cat_kuki.png" :
-		(image == "mellstroy") ? "mellstroy.png" : "face.png";
+		(image == "mellstroy") ? "mellstroy.png" :
+		(image == "pawn_black") ? "PawnWithBlackPeople.png" :
+		(image == "pawn_two_black") ? "PawnWithTwoBlackPeoples.png" : "face.png";
 	video::ITexture *tex = tsrc->getTexture(texname);
 	if (!tex)
 		return;
