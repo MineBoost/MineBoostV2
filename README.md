@@ -8,6 +8,8 @@
   [![License](https://img.shields.io/badge/license-LGPL--2.1-blue.svg)](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html)
   [![Stars](https://img.shields.io/github/stars/MineBoost/MineBoostV2?style=flat)](https://github.com/MineBoost/MineBoostV2/stargazers)
   [![Forks](https://img.shields.io/github/forks/MineBoost/MineBoostV2?style=flat)](https://github.com/MineBoost/MineBoostV2/forks)
+  [![Telegram](https://img.shields.io/badge/Telegram-Join-26A5E4?logo=telegram&logoColor=white)](https://t.me/Pryanilk)
+  [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/usexPqBAmq)
 
 </div>
 
@@ -21,59 +23,86 @@
 
 ## Table of Contents
 
-1. [MineBoost Features](#mineboost-features)
-2. [Default Controls](#default-controls)
-3. [Paths](#paths)
-4. [Configuration File](#configuration-file)
-5. [Command-line Options](#command-line-options)
-6. [Compiling](#compiling)
-7. [Docker](#docker)
-8. [Version Scheme](#version-scheme)
+1. [Community](#community)
+2. [MineBoost Features](#mineboost-features)
+3. [Default Controls](#default-controls)
+4. [Paths](#paths)
+5. [Configuration File](#configuration-file)
+6. [Command-line Options](#command-line-options)
+7. [Compiling](#compiling)
+8. [Docker](#docker)
+9. [Version Scheme](#version-scheme)
+
+## Community
+
+- Telegram: <https://t.me/Pryanilk>
+- Discord: <https://discord.gg/usexPqBAmq>
 
 ## MineBoost Features
 
 MineBoostV2's own settings menu groups everything under four sections — **GUI**, **Render**, **Movement**, and **Scrollbars**. The lists below mirror that same grouping, plus two extra sections for the chat-driven systems (Friend List, Macro Wheel) and outside integrations that don't live in a settings toggle.
 
 ### GUI
-On-screen HUD elements, each with its own toggle, and — where noted — its own position/color/size settings.
+On-screen HUD elements, each with its own toggle, and — where noted — its own position/color/size settings. Names below are exactly as labeled in-client.
 - **KeyStroker** — shows which keys/mouse buttons you're currently pressing
-- **CPS Counter** — live clicks-per-second counter
-- **Coordinates** — on-screen X/Y/Z position
-- **FPS Counter**
-- **Ping**
-- **Now Playing (Music HUD)** — track title + thumbnail while audio plays
-- **Inventory HUD**
-- **Craft HUD**
-- **Target HUD** — name, skin avatar, and live HP bar of whoever's in your crosshair
-- **Photo HUD** — decorative image shown behind open menus
+- **ShowCPS** — live clicks-per-second counter
+- **ShowCoords** — on-screen X/Y/Z position
+- **ShowFPS**
+- **ShowPing**
+- **NowPlaying** — track title + thumbnail while audio plays (Music HUD)
+- **InventoryHUD**
+- **CraftHUD**
+- **TargetHUD** — name, skin avatar, and live HP bar of whoever's in your crosshair
+- **PhotoHUD** — decorative image shown behind open menus
 
 ### Render
 - **Fullbright** — removes darkness/shadow so everything is fully lit
 - **Water Effect** — toggle the underwater post-processing tint
-- **Node Illumination**
-- **Display Sunrise**
-- **Disable Stars**
-- **Custom Fog Color**
-- **Custom Sky Color**
+- **Node illumination**
+- **Display sunrise**
+- **Disable stars**
+- **CustomFog**
+- **Sky color**
 - **Particles** — master toggle for particle effects
-- **Target ESP** — draws highlight particles on whoever you're currently targeting
-- **Hand View** — toggle visibility of your own first-person hand/arm model
+- **TargedESP** — draws highlight particles on whoever you're currently targeting (yes, that's how it's spelled in-client)
+- **HandView** — toggle visibility of your own first-person hand/arm model
 
 ### Movement
-- **Fast Place** — place blocks faster than the default rate
-- **No Friend Damage** — disable damage dealt to players on your Friend List
+- **Fast place** — place blocks faster than the default rate
+- **NoFriendDamage** — disable damage dealt to players on your Friend List
 
 ### Scrollbars
-Fine-tuning sliders for the features above:
-- **FPS Limit**
-- **Hit Particle Amount**
-- **Target Particle Amount** — density of the Target ESP effect
+These are literal `IGUIScrollBar` scrollbars in the menu (the tab itself is called "Scrollbars"), each fine-tuning one of the features above:
+- **FOV** — field of view
+- **FPS** — frame-rate cap
+- **Hit Particles** — amount of particles spawned when you land a hit
+- **Target Particles** — density of the TargedESP effect
 - **HUD Size** — global scale for all of MineBoost's custom HUD elements
+
+### Other integrations
+- **MineBoostV2 Presence Badges** — small badge next to the nametag of other players also running MineBoostV2, detected via mod-channel heartbeat or an optional custom presence server URL
+- **Discord Rich Presence** — shows your current server/activity on your Discord profile
+
+### Colors
+A dedicated panel for recoloring individual HUD elements — separate from the GUI/Render/Movement/Scrollbars tabs, opened via its own **Colors** button in the bottom-right corner of the screen (next to the **Move HUD** button, which lets you drag-reposition each HUD element).
+
+Pick a target from the list, then use the Red/Green/Blue scrollbars to live-preview and set its color:
+- Coords
+- FPS
+- Ping
+- NowPlaying
+- InventoryHUD
+- CraftHUD
+- TargetHUD
+- PhotoHUD
+- KeyStroker Outline
+- CPS Outline
+- Preview Outline
 
 ### Friend List & Macro Wheel (chat commands)
 Two systems driven by chat commands rather than menu toggles, each keeping its own list per server:
 
-**Friend List** — feeds both `No Friend Damage` and Friend ESP highlighting.
+**Friend List** — feeds both `NoFriendDamage` and Friend ESP highlighting.
 - `.friend add <Nickname>` — add a player
 - `.friend del <Nickname>` — remove a player
 - `.friend list` — show your current list
@@ -83,10 +112,6 @@ Two systems driven by chat commands rather than menu toggles, each keeping its o
 - `.macro del <number>` — remove an entry by its number
 - `.macro list` — list all saved macros
 - `.macro clear` — wipe the whole wheel
-
-### Other integrations
-- **MineBoostV2 Presence Badges** — small badge next to the nametag of other players also running MineBoostV2, detected via mod-channel heartbeat or an optional custom presence server URL
-- **Discord Rich Presence** — shows your current server/activity on your Discord profile
 
 ## Default controls
 
