@@ -3,9 +3,8 @@
 
   # MineBoostV2
 
-  **PvP client for [Luanti](https://www.luanti.org/) (formerly Minetest). Optimized to run on more devices.**
+  **PvP client built on the Luanti (formerly Minetest) engine. Optimized to run on more devices.**
 
-  [![Build Status](https://github.com/minetest/minetest/workflows/build/badge.svg)](https://github.com/minetest/minetest/workflows/build/badge.svg)
   [![License](https://img.shields.io/badge/license-LGPL--2.1-blue.svg)](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html)
   [![Stars](https://img.shields.io/github/stars/MineBoost/MineBoostV2?style=flat)](https://github.com/MineBoost/MineBoostV2/stargazers)
   [![Forks](https://img.shields.io/github/forks/MineBoost/MineBoostV2?style=flat)](https://github.com/MineBoost/MineBoostV2/forks)
@@ -16,34 +15,78 @@
 
 ## About
 
-**MineBoostV2** is a fork of [Luanti](https://www.luanti.org/) (formerly Minetest) built for PvP: lower system requirements, better performance on weak hardware and mobile devices, and extra quality-of-life features for combat.
+**MineBoostV2** is a fork of the Luanti (formerly Minetest) engine built for PvP: lower system requirements, better performance on low-end hardware, and extra quality-of-life features for combat.
+
+> **Note:** MineBoostV2 targets **desktop only** (Windows/Linux/macOS). Mobile/Android is not supported.
 
 ## Table of Contents
 
-1. [Features](#features)
-2. [Further Documentation](#further-documentation)
-3. [Default Controls](#default-controls)
-4. [Paths](#paths)
-5. [Configuration File](#configuration-file)
-6. [Command-line Options](#command-line-options)
-7. [Compiling](#compiling)
-8. [Docker](#docker)
-9. [Version Scheme](#version-scheme)
+1. [MineBoost Features](#mineboost-features)
+2. [Default Controls](#default-controls)
+3. [Paths](#paths)
+4. [Configuration File](#configuration-file)
+5. [Command-line Options](#command-line-options)
+6. [Compiling](#compiling)
+7. [Docker](#docker)
+8. [Version Scheme](#version-scheme)
 
-## Features
+## MineBoost Features
 
-- 🚀 Optimized for low-end and mobile devices
-- ⚔️ PvP-focused improvements
-- 🧩 Compatible with mods and games built on the Luanti engine
+MineBoostV2's own settings menu groups everything under four sections — **GUI**, **Render**, **Movement**, and **Scrollbars**. The lists below mirror that same grouping, plus two extra sections for the chat-driven systems (Friend List, Macro Wheel) and outside integrations that don't live in a settings toggle.
 
-## Further documentation
+### GUI
+On-screen HUD elements, each with its own toggle, and — where noted — its own position/color/size settings.
+- **KeyStroker** — shows which keys/mouse buttons you're currently pressing
+- **CPS Counter** — live clicks-per-second counter
+- **Coordinates** — on-screen X/Y/Z position
+- **FPS Counter**
+- **Ping**
+- **Now Playing (Music HUD)** — track title + thumbnail while audio plays
+- **Inventory HUD**
+- **Craft HUD**
+- **Target HUD** — name, skin avatar, and live HP bar of whoever's in your crosshair
+- **Photo HUD** — decorative image shown behind open menus
 
-- Website: <https://www.luanti.org/>
-- Wiki: <https://wiki.luanti.org/>
-- Forum: <https://forum.luanti.org/>
-- Upstream engine: <https://github.com/minetest/minetest/>
-- [Developer documentation](doc/developing)
-- [doc/](doc) directory of source distribution
+### Render
+- **Fullbright** — removes darkness/shadow so everything is fully lit
+- **Water Effect** — toggle the underwater post-processing tint
+- **Node Illumination**
+- **Display Sunrise**
+- **Disable Stars**
+- **Custom Fog Color**
+- **Custom Sky Color**
+- **Particles** — master toggle for particle effects
+- **Target ESP** — draws highlight particles on whoever you're currently targeting
+- **Hand View** — toggle visibility of your own first-person hand/arm model
+
+### Movement
+- **Fast Place** — place blocks faster than the default rate
+- **No Friend Damage** — disable damage dealt to players on your Friend List
+
+### Scrollbars
+Fine-tuning sliders for the features above:
+- **FPS Limit**
+- **Hit Particle Amount**
+- **Target Particle Amount** — density of the Target ESP effect
+- **HUD Size** — global scale for all of MineBoost's custom HUD elements
+
+### Friend List & Macro Wheel (chat commands)
+Two systems driven by chat commands rather than menu toggles, each keeping its own list per server:
+
+**Friend List** — feeds both `No Friend Damage` and Friend ESP highlighting.
+- `.friend add <Nickname>` — add a player
+- `.friend del <Nickname>` — remove a player
+- `.friend list` — show your current list
+
+**Macro Wheel** — hold the wheel key (**Tab** by default) to pop up a radial menu of saved commands, scroll to pick one, release to run it — works for server commands, chat messages, or other `.` client commands.
+- `.macro add <command>` — add an entry
+- `.macro del <number>` — remove an entry by its number
+- `.macro list` — list all saved macros
+- `.macro clear` — wipe the whole wheel
+
+### Other integrations
+- **MineBoostV2 Presence Badges** — small badge next to the nametag of other players also running MineBoostV2, detected via mod-channel heartbeat or an optional custom presence server URL
+- **Discord Rich Presence** — shows your current server/activity on your Discord profile
 
 ## Default controls
 
@@ -63,10 +106,13 @@ Some can be changed in the key config dialog in the settings tab.
 | Shift + right mouse button | Build (without using)                                                                                      |
 | I                          | Inventory menu                                                                                             |
 | Mouse wheel                | Select item                                                                                                |
-| 0-9                        | Select item                                                                                                |
+| 1-9, 0                     | Select item (slots 1-9, then 0 for slot 10) — each has its own individual keybind, rebindable separately  |
+| N                          | Next hotbar slot                                                                                           |
+| B                          | Previous hotbar slot                                                                                       |
 | Z                          | Zoom (needs zoom privilege)                                                                                |
 | T                          | Chat                                                                                                       |
-| /                          | Command                                                                                                    |
+| /                          | Open chat with `/` pre-filled (server command)                                                             |
+| .                          | Open chat with `.` pre-filled — used for MineBoost's local `.friend` / `.macro` commands                   |
 | Esc                        | Pause menu/abort/exit (pauses only singleplayer game)                                                      |
 | +                          | Increase view range                                                                                        |
 | -                          | Decrease view range                                                                                        |
@@ -77,6 +123,10 @@ Some can be changed in the key config dialog in the settings tab.
 | C                          | Cycle through camera modes                                                                                 |
 | V                          | Cycle through minimap modes                                                                                |
 | Shift + V                  | Change minimap orientation                                                                                 |
+| F                          | Toggle left-handed mode                                                                                    |
+| M                          | Mute/unmute sound                                                                                          |
+| Tab                        | Hold to open the MineBoost Macro Wheel                                                                     |
+| Right Shift                | Open the MineBoost settings menu (GUI / Render / Movement / Scrollbars)                                    |
 | F1                         | Hide/show HUD                                                                                              |
 | F2                         | Hide/show chat                                                                                             |
 | F3                         | Disable/enable fog                                                                                         |
@@ -84,6 +134,7 @@ Some can be changed in the key config dialog in the settings tab.
 | F5                         | Cycle through debug information screens                                                                    |
 | F6                         | Cycle through profiler info screens                                                                        |
 | F10                        | Show/hide console                                                                                          |
+| F11                        | Toggle fullscreen                                                                                          |
 | F12                        | Take screenshot                                                                                            |
 
 ## Paths
@@ -158,7 +209,7 @@ Prior to that we used `previous_version-dev`.
 
 ## License
 
-This project is distributed under the [LGPL-2.1](LICENSE.txt) license, as a fork of [Luanti](https://github.com/minetest/minetest) — Copyright (C) 2010-2024 Perttu Ahola and contributors.
+This project is distributed under the [LGPL-2.1](LICENSE.txt) license, as a fork of the Luanti engine — Copyright (C) 2010-2024 Perttu Ahola and contributors.
 
 ---
 
