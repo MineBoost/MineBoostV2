@@ -239,5 +239,5 @@ This project is distributed under the [LGPL-2.1](LICENSE.txt) license, as a fork
 ---
 
 <div align="center">
-  <sub>Made with ❤️ by the MineBoost team</sub>
+  <sub>Made with ❤️ by the MineBoostTeam</sub>
 </div>
